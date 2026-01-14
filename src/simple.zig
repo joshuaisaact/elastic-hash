@@ -56,7 +56,7 @@ pub const SimpleElasticHash = struct {
         self.allocator.free(self.sizes);
     }
 
-    fn hash(key: u64) u64 {
+    pub fn hash(key: u64) u64 {
         // Simple hash using wyhash
         var h = std.hash.Wyhash.init(0);
         std.hash.autoHash(&h, key);
@@ -156,58 +156,5 @@ test "high load factor" {
 
     for (0..900) |i| {
         try std.testing.expectEqual(@as(?u64, i * 10), map.get(i));
-    }
-}
-
-test "probe count comparison" {
-    const allocator = std.testing.allocator;
-
-    std.debug.print("\n", .{});
-    std.debug.print("=== Simple elastic vs linear probing (99% load) ===\n", .{});
-    std.debug.print("    n     | Elastic max | Linear max\n", .{});
-    std.debug.print("----------|-------------|------------\n", .{});
-
-    inline for ([_]usize{ 1000, 10000 }) |n| {
-        const fill = n * 99 / 100;
-
-        // Elastic
-        var elastic = try SimpleElasticHash.init(allocator, n);
-        defer elastic.deinit();
-
-        for (0..fill) |i| {
-            elastic.insert(i, i);
-        }
-
-        var elastic_max: usize = 0;
-        for (0..fill) |i| {
-            const result = elastic.getWithProbes(i);
-            elastic_max = @max(elastic_max, result.probes);
-        }
-
-        // Linear probing baseline
-        const slots = try allocator.alloc(?u64, n);
-        defer allocator.free(slots);
-        @memset(slots, null);
-
-        for (0..fill) |i| {
-            var idx = SimpleElasticHash.hash(i) % n;
-            while (slots[idx] != null) {
-                idx = (idx + 1) % n;
-            }
-            slots[idx] = i;
-        }
-
-        var linear_max: usize = 0;
-        for (0..fill) |i| {
-            var idx = SimpleElasticHash.hash(i) % n;
-            var probes: usize = 1;
-            while (slots[idx] != i) {
-                probes += 1;
-                idx = (idx + 1) % n;
-            }
-            linear_max = @max(linear_max, probes);
-        }
-
-        std.debug.print(" {d:>7}  |     {d:<5}   |    {d:<5}\n", .{ n, elastic_max, linear_max });
     }
 }
