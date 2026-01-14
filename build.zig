@@ -29,9 +29,19 @@ pub fn build(b: *std.Build) void {
         }),
     });
 
+    // Tests for hybrid implementation
+    const hybrid_tests = b.addTest(.{
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("src/hybrid.zig"),
+            .target = target,
+            .optimize = optimize,
+        }),
+    });
+
     const test_step = b.step("test", "Run tests");
     test_step.dependOn(&b.addRunArtifact(main_tests).step);
     test_step.dependOn(&b.addRunArtifact(simple_tests).step);
+    test_step.dependOn(&b.addRunArtifact(hybrid_tests).step);
 
     // Benchmark executable
     const bench = b.addExecutable(.{
