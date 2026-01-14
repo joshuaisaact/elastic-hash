@@ -2,6 +2,8 @@
 
 Elastic hashing implementation in Zig. Based on [Elastic Hashing](https://arxiv.org/pdf/2501.02305).
 
+Requires Zig 0.14+ (tested on 0.16.0-dev).
+
 See my blog post for a walkthrough: [www.joshtuddenham.dev/blog/hashmaps](https://www.joshtuddenham.dev/blog/hashmaps)
 
 ## Files
@@ -12,18 +14,7 @@ See my blog post for a walkthrough: [www.joshtuddenham.dev/blog/hashmaps](https:
   - Batch insertion with empty-fraction thresholds
   - Bitwise masking instead of modulo (power-of-two sizes)
   - The φ priority function from the paper
-
-## Build
-
-```
-zig build
-```
-
-## Run
-
-```
-zig build run
-```
+- `src/bench.zig` - Benchmarks comparing elastic hashing vs linear probing
 
 ## Test
 
@@ -31,8 +22,10 @@ zig build run
 zig build test
 ```
 
-For verbose output:
+## Benchmark
 
 ```
-zig build test --summary all
+zig build bench
 ```
+
+Runs scaling comparisons, throughput tests, and worst-case latency measurements.
