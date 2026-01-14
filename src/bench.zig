@@ -1,5 +1,6 @@
 //! Benchmarks comparing elastic hashing vs linear probing.
 //! Run with: zig build bench
+//! Or with custom runs: zig build bench -- 10
 //!
 //! Probe count comparisons use naive linear probing (not std.HashMap) because:
 //! 1. std.HashMap doesn't expose probe counts
@@ -15,6 +16,14 @@ const HybridElasticHash = @import("hybrid.zig").HybridElasticHash;
 pub fn main() !void {
     const allocator = std.heap.page_allocator;
 
+    // Parse optional runs argument (default 5)
+    var args = std.process.args();
+    _ = args.skip(); // skip program name
+    const runs: usize = if (args.next()) |arg|
+        std.fmt.parseInt(usize, arg, 10) catch 5
+    else
+        5;
+
     try scalingComparison(allocator);
     try simpleComparison(allocator);
     try throughputComparison(allocator);
@@ -22,7 +31,7 @@ pub fn main() !void {
     try fixedCapacityComparison(allocator);
     try loadFactorComparison(allocator);
     try stdHashMapComparison(allocator);
-    try hybridComparison(allocator);
+    try hybridComparison(allocator, runs);
 }
 
 fn scalingComparison(allocator: std.mem.Allocator) !void {
@@ -523,22 +532,19 @@ fn stdHashMapComparison(allocator: std.mem.Allocator) !void {
     }
 }
 
-fn hybridComparison(allocator: std.mem.Allocator) !void {
-    std.debug.print("\n=== Hybrid vs std.HashMap (99% load, 5 runs averaged) ===\n", .{});
+fn hybridComparison(allocator: std.mem.Allocator, runs: usize) !void {
+    std.debug.print("\n=== Hybrid vs std.HashMap (99% load, {} runs) ===\n", .{runs});
 
-    const sizes = [_]usize{ 10_000, 100_000, 1_000_000 };
-    const runs = 5;
+    const sizes = [_]usize{ 10_000, 50_000, 100_000, 250_000, 500_000, 1_000_000, 2_500_000, 5_000_000, 10_000_000 };
 
     inline for (sizes) |n| {
         const fill = n * 99 / 100;
 
         var hybrid_insert_total: u64 = 0;
         var hybrid_lookup_total: u64 = 0;
-        var hybrid_worst: u64 = 0;
 
         var std_insert_total: u64 = 0;
         var std_lookup_total: u64 = 0;
-        var std_worst: u64 = 0;
 
         for (0..runs) |_| {
             // Hybrid
@@ -557,12 +563,6 @@ fn hybridComparison(allocator: std.mem.Allocator) !void {
                     std.mem.doNotOptimizeAway(map.get(i));
                 }
                 hybrid_lookup_total += timer.read() / 1_000;
-
-                for (0..fill) |i| {
-                    var t = try std.time.Timer.start();
-                    std.mem.doNotOptimizeAway(map.get(i));
-                    hybrid_worst = @max(hybrid_worst, t.read());
-                }
             }
 
             // std.HashMap
@@ -583,12 +583,6 @@ fn hybridComparison(allocator: std.mem.Allocator) !void {
                     std.mem.doNotOptimizeAway(map.get(i));
                 }
                 std_lookup_total += timer.read() / 1_000;
-
-                for (0..fill) |i| {
-                    var t = try std.time.Timer.start();
-                    std.mem.doNotOptimizeAway(map.get(i));
-                    std_worst = @max(std_worst, t.read());
-                }
             }
         }
 
@@ -597,15 +591,13 @@ fn hybridComparison(allocator: std.mem.Allocator) !void {
         const s_ins = std_insert_total / runs;
         const s_get = std_lookup_total / runs;
 
-        // Calculate speedup (>1 = hybrid faster, <1 = std faster)
-        const ins_speedup = @as(f32, @floatFromInt(s_ins)) / @as(f32, @floatFromInt(h_ins));
-        const get_speedup = @as(f32, @floatFromInt(s_get)) / @as(f32, @floatFromInt(h_get));
+        const ins_ratio = @as(f32, @floatFromInt(s_ins)) / @as(f32, @floatFromInt(h_ins));
+        const get_ratio = @as(f32, @floatFromInt(s_get)) / @as(f32, @floatFromInt(h_get));
 
         std.debug.print("\nn = {}\n", .{n});
-        std.debug.print("           |   Hybrid   |    std     |  speedup\n", .{});
-        std.debug.print("-----------|------------|------------|----------\n", .{});
-        std.debug.print("  insert   | {d:>7}us  | {d:>7}us  |  {d:.2}x\n", .{ h_ins, s_ins, ins_speedup });
-        std.debug.print("  lookup   | {d:>7}us  | {d:>7}us  |  {d:.2}x\n", .{ h_get, s_get, get_speedup });
-        std.debug.print("  worst ns | {d:>7}    | {d:>7}    |\n", .{ hybrid_worst, std_worst });
+        std.debug.print("           |  Hybrid  |   std    | ratio\n", .{});
+        std.debug.print("-----------|----------|----------|-------\n", .{});
+        std.debug.print("  insert   | {d:>5}us  | {d:>5}us  | {d:.2}x\n", .{ h_ins, s_ins, ins_ratio });
+        std.debug.print("  lookup   | {d:>5}us  | {d:>5}us  | {d:.2}x\n", .{ h_get, s_get, get_ratio });
     }
 }

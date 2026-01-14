@@ -10,18 +10,28 @@ See my blog post for a walkthrough: [www.joshtuddenham.dev/blog/hashmaps](https:
 
 The hybrid implementation beats Zig's `std.HashMap` at 99% load factor. `std.HashMap` is based on Google's [SwissTable](https://abseil.io/about/design/swisstables) - the same design used in Abseil (C++), Go 1.24+, and Rust's `hashbrown`.
 
-Benchmarks at 99% load, 5 runs averaged:
+Benchmarks at 99% load, 10 runs averaged (ratio >1 = Hybrid faster):
 
-| n | operation | Hybrid | std.HashMap | speedup |
-|---|-----------|--------|-------------|---------|
-| 10k | insert | 1050us | 1545us | **1.47x** |
-| 10k | lookup | 1077us | 1443us | **1.34x** |
-| 100k | insert | 11432us | 16786us | **1.47x** |
-| 100k | lookup | 13961us | 15348us | **1.10x** |
-| 1M | insert | 183525us | 243100us | **1.32x** |
-| 1M | lookup | 592077us | 280735us | 0.47x |
+| n | insert | lookup |
+|---|--------|--------|
+| 10k | **1.49x** | **1.29x** |
+| 50k | **1.50x** | **1.13x** |
+| 100k | **1.49x** | **1.10x** |
+| 250k | **1.58x** | 0.43x |
+| 500k | **1.47x** | 0.42x |
+| 1M | **1.22x** | 0.47x |
+| 2.5M | **1.10x** | **1.47x** |
+| 5M | **1.25x** | **1.48x** |
+| 10M | **1.23x** | **1.43x** |
 
-Insert is 1.3-1.5x faster at all sizes. Lookup is faster up to 100k elements, but loses at 1M due to cache locality effects from the tiered structure.
+**Insert** is 1.1-1.6x faster at all sizes.
+
+**Lookup** has three regimes:
+- Up to 100k: Hybrid wins (1.1-1.3x faster)
+- 250k-1M: Hybrid loses (0.4-0.5x) - cache locality "valley"
+- 2.5M+: Hybrid wins again (1.4-1.5x faster)
+
+The "valley" occurs where cache effects from tiered probing hurt more than std.HashMap's long probe chains. At very large scale, std.HashMap's probe chains become so long that Hybrid's tiered structure wins again.
 
 ## Files
 
@@ -43,4 +53,10 @@ zig build test
 
 ```
 zig build bench
+```
+
+With custom number of runs (default 5):
+
+```
+zig build bench -- 10
 ```

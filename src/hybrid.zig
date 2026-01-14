@@ -60,7 +60,8 @@ pub const HybridElasticHash = struct {
     const Self = @This();
 
     allocator: std.mem.Allocator,
-    tiers: [][]Bucket,
+    buckets: []Bucket, // single contiguous allocation
+    tier_starts: []usize, // offset where each tier begins
     tier_bucket_counts: []usize,
     tier_slot_counts: []usize, // slots used per tier (for empty fraction)
     num_tiers: usize,
@@ -72,23 +73,30 @@ pub const HybridElasticHash = struct {
         const tier0_buckets = @max(capacity / BUCKET_SIZE, 1);
         const num_tiers = @max(1, std.math.log2_int(usize, tier0_buckets) + 1);
 
-        const tiers = try allocator.alloc([]Bucket, num_tiers);
+        const tier_starts = try allocator.alloc(usize, num_tiers);
         const tier_bucket_counts = try allocator.alloc(usize, num_tiers);
         const tier_slot_counts = try allocator.alloc(usize, num_tiers);
 
+        // Calculate total buckets and offsets
+        var total_buckets: usize = 0;
         var buckets_in_tier = tier0_buckets;
         for (0..num_tiers) |i| {
             buckets_in_tier = @max(buckets_in_tier, 1);
+            tier_starts[i] = total_buckets;
             tier_bucket_counts[i] = buckets_in_tier;
             tier_slot_counts[i] = 0;
-            tiers[i] = try allocator.alloc(Bucket, buckets_in_tier);
-            @memset(tiers[i], Bucket{});
+            total_buckets += buckets_in_tier;
             buckets_in_tier /= 2;
         }
 
+        // Single contiguous allocation
+        const buckets = try allocator.alloc(Bucket, total_buckets);
+        @memset(buckets, Bucket{});
+
         return .{
             .allocator = allocator,
-            .tiers = tiers,
+            .buckets = buckets,
+            .tier_starts = tier_starts,
             .tier_bucket_counts = tier_bucket_counts,
             .tier_slot_counts = tier_slot_counts,
             .num_tiers = num_tiers,
@@ -96,12 +104,15 @@ pub const HybridElasticHash = struct {
     }
 
     pub fn deinit(self: *Self) void {
-        for (self.tiers) |tier| {
-            self.allocator.free(tier);
-        }
-        self.allocator.free(self.tiers);
+        self.allocator.free(self.buckets);
+        self.allocator.free(self.tier_starts);
         self.allocator.free(self.tier_bucket_counts);
         self.allocator.free(self.tier_slot_counts);
+    }
+
+    /// Get bucket pointer using tier offset
+    inline fn getBucket(self: *const Self, tier: usize, bucket_idx: usize) *Bucket {
+        return &self.buckets[self.tier_starts[tier] + bucket_idx];
     }
 
     inline fn hash(key: u64) u64 {
@@ -185,7 +196,7 @@ pub const HybridElasticHash = struct {
         var probe: usize = 0;
         while (probe < num_buckets) : (probe += 1) {
             const bucket_idx = bucketIndex(h, probe, num_buckets);
-            const bucket = &self.tiers[tier][bucket_idx];
+            const bucket = self.getBucket(tier, bucket_idx);
 
             if (bucket.findEmpty()) |slot| {
                 bucket.insert(slot, key, value, fp);
@@ -204,7 +215,7 @@ pub const HybridElasticHash = struct {
 
         for (0..max_probe) |probe| {
             const bucket_idx = bucketIndex(h, probe, num_buckets);
-            const bucket = &self.tiers[tier][bucket_idx];
+            const bucket = self.getBucket(tier, bucket_idx);
 
             if (bucket.findEmpty()) |slot| {
                 bucket.insert(slot, key, value, fp);
@@ -223,7 +234,7 @@ pub const HybridElasticHash = struct {
                 if (probe >= num_buckets) continue;
 
                 const bucket_idx = bucketIndex(h, probe, num_buckets);
-                const bucket = &self.tiers[tier][bucket_idx];
+                const bucket = self.getBucket(tier, bucket_idx);
 
                 if (bucket.findEmpty()) |slot| {
                     bucket.insert(slot, key, value, fp);
@@ -246,7 +257,7 @@ pub const HybridElasticHash = struct {
                 if (probe >= num_buckets) continue;
 
                 const bucket_idx = bucketIndex(h, probe, num_buckets);
-                const bucket = &self.tiers[tier][bucket_idx];
+                const bucket = self.getBucket(tier, bucket_idx);
 
                 if (bucket.findKey(key, fp)) |slot| {
                     return bucket.values[slot];
@@ -268,7 +279,7 @@ pub const HybridElasticHash = struct {
 
                 bucket_probes += 1;
                 const bucket_idx = bucketIndex(h, probe, num_buckets);
-                const bucket = &self.tiers[tier][bucket_idx];
+                const bucket = self.getBucket(tier, bucket_idx);
 
                 if (bucket.findKey(key, fp)) |slot| {
                     return .{ .value = bucket.values[slot], .bucket_probes = bucket_probes };
