@@ -12,17 +12,11 @@ const std = @import("std");
 const ElasticHash = @import("main.zig").ElasticHash;
 const SimpleElasticHash = @import("simple.zig").SimpleElasticHash;
 const HybridElasticHash = @import("hybrid.zig").HybridElasticHash;
+const ComptimeHybridElasticHash = @import("hybrid.zig").ComptimeHybridElasticHash;
 
 pub fn main() !void {
     const allocator = std.heap.page_allocator;
-
-    // Parse optional runs argument (default 5)
-    var args = std.process.args();
-    _ = args.skip(); // skip program name
-    const runs: usize = if (args.next()) |arg|
-        std.fmt.parseInt(usize, arg, 10) catch 5
-    else
-        5;
+    const runs: usize = 5;
 
     try scalingComparison(allocator);
     try simpleComparison(allocator);
@@ -32,6 +26,11 @@ pub fn main() !void {
     try loadFactorComparison(allocator);
     try stdHashMapComparison(allocator);
     try hybridComparison(allocator, runs);
+    try comptimeComparison(allocator, runs);
+    try probeCountAnalysis(allocator);
+    try consistentLoadComparison(allocator, runs);
+    try deleteComparison(allocator, runs);
+    try mixedWorkloadComparison(allocator, runs);
 }
 
 fn scalingComparison(allocator: std.mem.Allocator) !void {
@@ -599,5 +598,312 @@ fn hybridComparison(allocator: std.mem.Allocator, runs: usize) !void {
         std.debug.print("-----------|----------|----------|-------\n", .{});
         std.debug.print("  insert   | {d:>5}us  | {d:>5}us  | {d:.2}x\n", .{ h_ins, s_ins, ins_ratio });
         std.debug.print("  lookup   | {d:>5}us  | {d:>5}us  | {d:.2}x\n", .{ h_get, s_get, get_ratio });
+    }
+}
+
+fn comptimeComparison(allocator: std.mem.Allocator, runs: usize) !void {
+    std.debug.print("\n=== Comptime vs Runtime Hybrid (99% load, {} runs) ===\n", .{runs});
+
+    // Test a few sizes where comptime benefits should be visible
+    inline for ([_]usize{ 10_000, 100_000, 1_000_000 }) |n| {
+        const fill = n * 99 / 100;
+
+        var runtime_insert_total: u64 = 0;
+        var runtime_lookup_total: u64 = 0;
+        var comptime_insert_total: u64 = 0;
+        var comptime_lookup_total: u64 = 0;
+
+        for (0..runs) |_| {
+            // Runtime version
+            {
+                var map = try HybridElasticHash.init(allocator, n);
+                defer map.deinit();
+
+                var timer = try std.time.Timer.start();
+                for (0..fill) |i| {
+                    map.insert(i, i);
+                }
+                runtime_insert_total += timer.read() / 1_000;
+
+                timer.reset();
+                for (0..fill) |i| {
+                    std.mem.doNotOptimizeAway(map.get(i));
+                }
+                runtime_lookup_total += timer.read() / 1_000;
+            }
+
+            // Comptime version
+            {
+                const ComptimeMap = ComptimeHybridElasticHash(n);
+                var map = try ComptimeMap.init(allocator);
+                defer map.deinit();
+
+                var timer = try std.time.Timer.start();
+                for (0..fill) |i| {
+                    map.insert(i, i);
+                }
+                comptime_insert_total += timer.read() / 1_000;
+
+                timer.reset();
+                for (0..fill) |i| {
+                    std.mem.doNotOptimizeAway(map.get(i));
+                }
+                comptime_lookup_total += timer.read() / 1_000;
+            }
+        }
+
+        const r_ins = runtime_insert_total / runs;
+        const r_get = runtime_lookup_total / runs;
+        const c_ins = comptime_insert_total / runs;
+        const c_get = comptime_lookup_total / runs;
+
+        const ins_ratio = @as(f32, @floatFromInt(r_ins)) / @as(f32, @floatFromInt(c_ins));
+        const get_ratio = @as(f32, @floatFromInt(r_get)) / @as(f32, @floatFromInt(c_get));
+
+        std.debug.print("\nn = {}\n", .{n});
+        std.debug.print("           | Runtime  | Comptime | ratio\n", .{});
+        std.debug.print("-----------|----------|----------|-------\n", .{});
+        std.debug.print("  insert   | {d:>5}us  | {d:>5}us  | {d:.2}x\n", .{ r_ins, c_ins, ins_ratio });
+        std.debug.print("  lookup   | {d:>5}us  | {d:>5}us  | {d:.2}x\n", .{ r_get, c_get, get_ratio });
+    }
+}
+
+fn probeCountAnalysis(allocator: std.mem.Allocator) !void {
+    std.debug.print("\n=== Probe Count Analysis (CONSISTENT 95% actual load) ===\n", .{});
+    std.debug.print("    n      | capacity   | avg probes | max probes | ns/lookup | ns/probe\n", .{});
+    std.debug.print("-----------|------------|------------|------------|-----------|----------\n", .{});
+
+    // Sizes chosen to give exactly 95% actual load after power-of-two rounding
+    const sizes = [_]usize{ 15_721, 62_887, 251_551, 503_104, 1_006_209, 2_012_418, 4_024_836 };
+
+    inline for (sizes) |n| {
+        const fill = n * 99 / 100;
+
+        var map = try HybridElasticHash.init(allocator, n);
+        defer map.deinit();
+
+        for (0..fill) |i| {
+            map.insert(i, i);
+        }
+
+        // Measure probes and time
+        var total_probes: usize = 0;
+        var max_probes: usize = 0;
+
+        var timer = try std.time.Timer.start();
+        for (0..fill) |i| {
+            const result = map.getWithProbes(i);
+            total_probes += result.bucket_probes;
+            max_probes = @max(max_probes, result.bucket_probes);
+            std.mem.doNotOptimizeAway(result.value);
+        }
+        const elapsed_ns = timer.read();
+
+        const avg_probes = total_probes / fill;
+        const ns_per_lookup = elapsed_ns / fill;
+        const ns_per_probe = if (total_probes > 0) elapsed_ns / total_probes else 0;
+
+        // Calculate actual capacity (power of two)
+        const capacity = std.math.ceilPowerOfTwo(usize, n) catch n;
+
+        std.debug.print(" {d:>8}  | {d:>10} |    {d:>5}   |    {d:>5}   |   {d:>5}   |   {d:>5}\n", .{
+            n, capacity, avg_probes, max_probes, ns_per_lookup, ns_per_probe,
+        });
+    }
+}
+
+fn consistentLoadComparison(allocator: std.mem.Allocator, runs: usize) !void {
+    std.debug.print("\n=== Hybrid vs std.HashMap (99% of ACTUAL CAPACITY, {} runs) ===\n", .{runs});
+
+    // Use power-of-two capacities directly, fill to 99% of actual capacity
+    const capacities = [_]usize{ 1 << 14, 1 << 16, 1 << 18, 1 << 19, 1 << 20, 1 << 21, 1 << 22 };
+
+    inline for (capacities) |capacity| {
+        const fill = capacity * 99 / 100; // 99% of ACTUAL capacity
+        const n = capacity; // Request exactly the capacity
+
+        var hybrid_insert_total: u64 = 0;
+        var hybrid_lookup_total: u64 = 0;
+        var std_insert_total: u64 = 0;
+        var std_lookup_total: u64 = 0;
+
+        for (0..runs) |_| {
+            // Hybrid
+            {
+                var map = try HybridElasticHash.init(allocator, n);
+                defer map.deinit();
+
+                var timer = try std.time.Timer.start();
+                for (0..fill) |i| {
+                    map.insert(i, i);
+                }
+                hybrid_insert_total += timer.read() / 1_000;
+
+                timer.reset();
+                for (0..fill) |i| {
+                    std.mem.doNotOptimizeAway(map.get(i));
+                }
+                hybrid_lookup_total += timer.read() / 1_000;
+            }
+
+            // std.HashMap
+            {
+                const HighLoadHashMap = std.hash_map.HashMap(u64, u64, std.hash_map.AutoContext(u64), 99);
+                var map = HighLoadHashMap.init(allocator);
+                defer map.deinit();
+                try map.ensureTotalCapacity(@intCast(fill));
+
+                var timer = try std.time.Timer.start();
+                for (0..fill) |i| {
+                    map.putAssumeCapacity(i, i);
+                }
+                std_insert_total += timer.read() / 1_000;
+
+                timer.reset();
+                for (0..fill) |i| {
+                    std.mem.doNotOptimizeAway(map.get(i));
+                }
+                std_lookup_total += timer.read() / 1_000;
+            }
+        }
+
+        const h_ins = hybrid_insert_total / runs;
+        const h_get = hybrid_lookup_total / runs;
+        const s_ins = std_insert_total / runs;
+        const s_get = std_lookup_total / runs;
+
+        const ins_ratio = @as(f32, @floatFromInt(s_ins)) / @as(f32, @floatFromInt(h_ins));
+        const get_ratio = @as(f32, @floatFromInt(s_get)) / @as(f32, @floatFromInt(h_get));
+
+        std.debug.print("\ncapacity = {} (fill={}, 99% actual load)\n", .{ capacity, fill });
+        std.debug.print("           |  Hybrid  |   std    | ratio\n", .{});
+        std.debug.print("-----------|----------|----------|-------\n", .{});
+        std.debug.print("  insert   | {d:>5}us  | {d:>5}us  | {d:.2}x\n", .{ h_ins, s_ins, ins_ratio });
+        std.debug.print("  lookup   | {d:>5}us  | {d:>5}us  | {d:.2}x\n", .{ h_get, s_get, get_ratio });
+    }
+}
+
+fn deleteComparison(allocator: std.mem.Allocator, runs: usize) !void {
+    std.debug.print("\n=== Delete Comparison (99% load, {} runs) ===\n", .{runs});
+
+    const capacities = [_]usize{ 1 << 14, 1 << 16, 1 << 18, 1 << 20 };
+
+    inline for (capacities) |capacity| {
+        const fill = capacity * 99 / 100;
+        const delete_count = fill / 2;
+
+        var hybrid_delete_total: u64 = 0;
+        var std_delete_total: u64 = 0;
+
+        for (0..runs) |_| {
+            // Hybrid
+            {
+                var map = try HybridElasticHash.init(allocator, capacity);
+                defer map.deinit();
+
+                for (0..fill) |i| {
+                    map.insert(i, i);
+                }
+
+                var timer = try std.time.Timer.start();
+                for (0..delete_count) |i| {
+                    _ = map.remove(i * 2);
+                }
+                hybrid_delete_total += timer.read() / 1_000;
+            }
+
+            // std.HashMap
+            {
+                const HashMap = std.hash_map.HashMap(u64, u64, std.hash_map.AutoContext(u64), 99);
+                var map = HashMap.init(allocator);
+                defer map.deinit();
+                try map.ensureTotalCapacity(@intCast(fill));
+
+                for (0..fill) |i| {
+                    map.putAssumeCapacity(i, i);
+                }
+
+                var timer = try std.time.Timer.start();
+                for (0..delete_count) |i| {
+                    _ = map.remove(i * 2);
+                }
+                std_delete_total += timer.read() / 1_000;
+            }
+        }
+
+        const h_del = hybrid_delete_total / runs;
+        const s_del = std_delete_total / runs;
+        const del_ratio = @as(f32, @floatFromInt(s_del)) / @as(f32, @floatFromInt(h_del));
+
+        std.debug.print("\ncapacity = {} (delete {})\n", .{ capacity, delete_count });
+        std.debug.print("           |  Hybrid  |   std    | ratio\n", .{});
+        std.debug.print("-----------|----------|----------|-------\n", .{});
+        std.debug.print("  delete   | {d:>5}us  | {d:>5}us  | {d:.2}x\n", .{ h_del, s_del, del_ratio });
+    }
+}
+
+fn mixedWorkloadComparison(allocator: std.mem.Allocator, runs: usize) !void {
+    std.debug.print("\n=== Mixed Workload (insert/lookup/delete, {} runs) ===\n", .{runs});
+
+    const capacities = [_]usize{ 1 << 14, 1 << 16, 1 << 18 };
+
+    inline for (capacities) |capacity| {
+        const ops = capacity;
+
+        var hybrid_total: u64 = 0;
+        var std_total: u64 = 0;
+
+        for (0..runs) |_| {
+            // Hybrid
+            {
+                var map = try HybridElasticHash.init(allocator, capacity);
+                defer map.deinit();
+
+                var timer = try std.time.Timer.start();
+                for (0..ops / 2) |i| {
+                    map.insert(i, i);
+                }
+                for (0..ops / 4) |i| {
+                    std.mem.doNotOptimizeAway(map.get(i));
+                    map.insert(ops / 2 + i, i);
+                    _ = map.remove(i);
+                }
+                for (0..ops / 4) |i| {
+                    std.mem.doNotOptimizeAway(map.get(ops / 2 + i));
+                }
+                hybrid_total += timer.read() / 1_000;
+            }
+
+            // std.HashMap
+            {
+                const HashMap = std.hash_map.HashMap(u64, u64, std.hash_map.AutoContext(u64), 99);
+                var map = HashMap.init(allocator);
+                defer map.deinit();
+                try map.ensureTotalCapacity(@intCast(capacity));
+
+                var timer = try std.time.Timer.start();
+                for (0..ops / 2) |i| {
+                    map.putAssumeCapacity(i, i);
+                }
+                for (0..ops / 4) |i| {
+                    std.mem.doNotOptimizeAway(map.get(i));
+                    map.putAssumeCapacity(ops / 2 + i, i);
+                    _ = map.remove(i);
+                }
+                for (0..ops / 4) |i| {
+                    std.mem.doNotOptimizeAway(map.get(ops / 2 + i));
+                }
+                std_total += timer.read() / 1_000;
+            }
+        }
+
+        const h_time = hybrid_total / runs;
+        const s_time = std_total / runs;
+        const ratio = @as(f32, @floatFromInt(s_time)) / @as(f32, @floatFromInt(h_time));
+
+        std.debug.print("\ncapacity = {} ({} ops)\n", .{ capacity, ops });
+        std.debug.print("           |  Hybrid  |   std    | ratio\n", .{});
+        std.debug.print("-----------|----------|----------|-------\n", .{});
+        std.debug.print("  mixed    | {d:>5}us  | {d:>5}us  | {d:.2}x\n", .{ h_time, s_time, ratio });
     }
 }
