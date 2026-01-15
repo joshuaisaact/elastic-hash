@@ -1,5 +1,7 @@
 # elastic-hash-zig
 
+> **Disclaimer:** I'm still learning Zig and there may be memory crimes.
+
 Elastic hashing implementation in Zig. Based on [Elastic Hashing](https://arxiv.org/pdf/2501.02305).
 
 Requires Zig 0.14+ (tested on 0.16.0-dev).
