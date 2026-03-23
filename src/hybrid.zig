@@ -555,20 +555,14 @@ pub const HybridElasticHash = struct {
         const fp = fingerprint(h);
         const mask = self.tier0_bucket_mask;
 
-        // Probe 0 (most lookups hit here)
+        // Check probe 0 (most lookups hit here)
         const bucket0 = h & mask;
         if (self.findKeyInBucket(bucket0, key, fp)) |slot| {
             return self.values[bucket0][slot];
         }
 
-        // Probe 1
-        const bucket1 = (h +% 1) & mask;
-        if (self.findKeyInBucket(bucket1, key, fp)) |slot| {
-            return self.values[bucket1][slot];
-        }
-
-        // Remaining probes 2..7
-        var probe: usize = 2;
+        // Remaining probes
+        var probe: usize = 1;
         while (probe < MAX_PROBES) : (probe += 1) {
             const bucket_idx = (h +% @as(u64, probe)) & mask;
 
