@@ -80,12 +80,13 @@ pub fn ComptimeHybridElasticHash(comptime capacity: usize) type {
         }
 
         inline fn hash(key: u64) u64 {
-            var a = key ^ 0xa0761d6478bd642f;
-            var b = key ^ 0xe7037ed1a0b428db;
-            const r = @as(u128, a) *% @as(u128, b);
-            a = @truncate(r);
-            b = @truncate(r >> 64);
-            return a ^ b;
+            var h = key;
+            h ^= h >> 30;
+            h *%= 0xbf58476d1ce4e5b9;
+            h ^= h >> 27;
+            h *%= 0x94d049bb133111eb;
+            h ^= h >> 31;
+            return h;
         }
 
         inline fn fingerprint(h: u64) u8 {
@@ -391,12 +392,14 @@ pub const HybridElasticHash = struct {
     }
 
     inline fn hash(key: u64) u64 {
-        var a = key ^ 0xa0761d6478bd642f;
-        var b = key ^ 0xe7037ed1a0b428db;
-        const r = @as(u128, a) *% @as(u128, b);
-        a = @truncate(r);
-        b = @truncate(r >> 64);
-        return a ^ b;
+        // Stafford variant 13 of MurmurHash3's 64-bit finalizer
+        var h = key;
+        h ^= h >> 30;
+        h *%= 0xbf58476d1ce4e5b9;
+        h ^= h >> 27;
+        h *%= 0x94d049bb133111eb;
+        h ^= h >> 31;
+        return h;
     }
 
     inline fn fingerprint(h: u64) u8 {
