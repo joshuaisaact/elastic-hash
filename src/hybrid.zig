@@ -398,7 +398,7 @@ pub const HybridElasticHash = struct {
 
     inline fn hash(key: u64) u64 {
         const h = key *% 0x517cc1b727220a95;
-        return h ^ (h >> 32);
+        return h ^ (h >> 28);
     }
 
     inline fn fingerprint(h: u64) u8 {
