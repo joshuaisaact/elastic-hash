@@ -399,9 +399,9 @@ pub const HybridElasticHash = struct {
     }
 
     inline fn fingerprint(h: u64) u8 {
-        // Branchless: clamp bits 32-39 to range 1-254
+        // Use bits 32-39 for fingerprint (less correlated with bucket index from low bits)
         const fp: u8 = @truncate(h >> 32);
-        return @max(@min(fp, 0xFE), 1);
+        return if (fp == 0) 1 else if (fp == TOMBSTONE) 0xFE else fp;
     }
 
     inline fn bucketIndex(h: u64, probe: usize, num_buckets: usize) usize {
