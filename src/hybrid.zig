@@ -318,6 +318,7 @@ inline fn matchEmptyOrTombstone(fps: *const [BUCKET_SIZE]u8) u16 {
 
 pub const HybridElasticHash = struct {
     const Self = @This();
+    const MAX_TIERS = 24;
 
     allocator: std.mem.Allocator,
 
@@ -326,9 +327,10 @@ pub const HybridElasticHash = struct {
     keys: [][BUCKET_SIZE]u64,
     values: [][BUCKET_SIZE]u64,
 
-    tier_starts: []usize,
-    tier_bucket_counts: []usize,
-    tier_slot_counts: []usize,
+    // Fixed-size arrays avoid heap allocation and pointer chases
+    tier_starts: [MAX_TIERS]usize = [_]usize{0} ** MAX_TIERS,
+    tier_bucket_counts: [MAX_TIERS]usize = [_]usize{0} ** MAX_TIERS,
+    tier_slot_counts: [MAX_TIERS]usize = [_]usize{0} ** MAX_TIERS,
     num_tiers: usize,
     total_buckets: usize,
     count: usize = 0,
@@ -336,14 +338,11 @@ pub const HybridElasticHash = struct {
 
     pub fn init(allocator: std.mem.Allocator, n: usize) !Self {
         const capacity = std.math.ceilPowerOfTwo(usize, n) catch n;
-        // Tier 0 = capacity/2 (must be power of 2 for bucket indexing!)
-        // This forces elements to spread across tiers (real elastic hashing)
         const tier0_buckets = @max(capacity / BUCKET_SIZE / 2, 1);
         const num_tiers = @max(1, std.math.log2_int(usize, tier0_buckets) + 1);
 
-        const tier_starts = try allocator.alloc(usize, num_tiers);
-        const tier_bucket_counts = try allocator.alloc(usize, num_tiers);
-        const tier_slot_counts = try allocator.alloc(usize, num_tiers);
+        var tier_starts: [MAX_TIERS]usize = [_]usize{0} ** MAX_TIERS;
+        var tier_bucket_counts: [MAX_TIERS]usize = [_]usize{0} ** MAX_TIERS;
 
         var total_buckets: usize = 0;
         var buckets_in_tier = tier0_buckets;
@@ -351,7 +350,6 @@ pub const HybridElasticHash = struct {
             buckets_in_tier = @max(buckets_in_tier, 1);
             tier_starts[i] = total_buckets;
             tier_bucket_counts[i] = buckets_in_tier;
-            tier_slot_counts[i] = 0;
             total_buckets += buckets_in_tier;
             buckets_in_tier /= 2;
         }
@@ -371,7 +369,6 @@ pub const HybridElasticHash = struct {
             .values = values,
             .tier_starts = tier_starts,
             .tier_bucket_counts = tier_bucket_counts,
-            .tier_slot_counts = tier_slot_counts,
             .num_tiers = num_tiers,
             .total_buckets = total_buckets,
         };
@@ -381,9 +378,6 @@ pub const HybridElasticHash = struct {
         self.allocator.free(self.fingerprints);
         self.allocator.free(self.keys);
         self.allocator.free(self.values);
-        self.allocator.free(self.tier_starts);
-        self.allocator.free(self.tier_bucket_counts);
-        self.allocator.free(self.tier_slot_counts);
     }
 
     inline fn getBucketIdx(self: *const Self, tier: usize, bucket_idx: usize) usize {
