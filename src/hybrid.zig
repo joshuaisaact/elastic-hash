@@ -399,8 +399,8 @@ pub const HybridElasticHash = struct {
     }
 
     inline fn fingerprint(h: u64) u8 {
-        // Use bits 24-31 - well mixed from multiply, independent from bucket index
-        const fp: u8 = @truncate(h >> 24);
+        // Use bits 32-39 for fingerprint (less correlated with bucket index from low bits)
+        const fp: u8 = @truncate(h >> 32);
         return if (fp == 0) 1 else if (fp == TOMBSTONE) 0xFE else fp;
     }
 
@@ -552,9 +552,13 @@ pub const HybridElasticHash = struct {
 
     pub fn get(self: *const Self, key: u64) ?u64 {
         const h = hash(key);
-        const fp = fingerprint(h);
         const mask = self.tier0_bucket_mask;
+        const bucket0 = h & mask;
 
+        // Ultra-fast path: check if key is in slot 0 of first bucket (and slot is live)
+        if (self.keys[bucket0][0] == key and self.fingerprints[bucket0][0] != 0 and self.fingerprints[bucket0][0] != TOMBSTONE) return self.values[bucket0][0];
+
+        const fp = fingerprint(h);
         var probe: usize = 0;
         while (probe < MAX_PROBES) : (probe += 1) {
             const bucket_idx = (h +% @as(u64, probe)) & mask;
