@@ -573,8 +573,10 @@ pub const HybridElasticHash = struct {
         const mask = self.tier0_bucket_mask;
         const bucket_base = h >> self.tier0_bucket_shift;
 
-        // Prefetch entries for probe 0 (random access, hardware prefetcher can't predict)
-        @prefetch(@as([*]const u8, @ptrCast(&self.entries[bucket_base & mask])), .{ .rw = .read, .locality = 3 });
+        // Prefetch fingerprints and entries for probe 0 (both random, can't be hardware-prefetched)
+        const bucket0_idx = bucket_base & mask;
+        @prefetch(@as([*]const u8, @ptrCast(&self.fingerprints[bucket0_idx])), .{ .rw = .read, .locality = 3 });
+        @prefetch(@as([*]const u8, @ptrCast(&self.entries[bucket0_idx])), .{ .rw = .read, .locality = 3 });
 
         var probe: usize = 0;
         while (probe < MAX_PROBES) : (probe += 1) {
