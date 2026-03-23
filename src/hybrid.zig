@@ -319,23 +319,22 @@ inline fn matchEmptyOrTombstone(fps: *const [BUCKET_SIZE]u8) u16 {
 pub const HybridElasticHash = struct {
     const Self = @This();
 
-    allocator: std.mem.Allocator,
-
-    // Separated memory layout for cache efficiency
+    // Hot path fields first (get/remove) - fit in first cache line
     fingerprints: [][BUCKET_SIZE]u8,
     keys: [][BUCKET_SIZE]u64,
     values: [][BUCKET_SIZE]u64,
+    tier0_bucket_mask: usize,
 
+    // Insert/management fields
     tier_starts: []usize,
     tier_bucket_counts: []usize,
     tier_slot_counts: []usize,
+    tier0_bucket_count: usize,
     num_tiers: usize,
     total_buckets: usize,
-    // Cached tier 0 metadata to avoid heap reads in hot path
-    tier0_bucket_count: usize,
-    tier0_bucket_mask: usize,
     count: usize = 0,
     current_batch: usize = 0,
+    allocator: std.mem.Allocator,
 
     pub fn init(allocator: std.mem.Allocator, n: usize) !Self {
         const capacity = std.math.ceilPowerOfTwo(usize, n) catch n;
