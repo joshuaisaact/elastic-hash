@@ -457,12 +457,6 @@ pub const HybridElasticHash = struct {
         const fp = fingerprint(h);
         const i = self.current_batch;
 
-        // Prefetch first probe location
-        if (self.num_tiers > 0) {
-            const first_bucket = self.getBucketIdx(0, bucketIndex(h, 0, self.tier_bucket_counts[0]));
-            @prefetch(&self.fingerprints[first_bucket], .{ .rw = .write, .locality = 3, .cache = .data });
-        }
-
         if (i == 0) {
             self.insertIntoTier(0, h, fp, key, value);
             if (self.getEmptyFraction(0) <= 0.25) {
