@@ -418,7 +418,7 @@ pub const HybridElasticHash = struct {
         return @min(@as(usize, @intFromFloat(@max(1.0, limit))), MAX_PROBES);
     }
 
-    noinline fn findKeyInBucket(self: *const Self, bucket_abs_idx: usize, key: u64, fp: u8) ?usize {
+    inline fn findKeyInBucket(self: *const Self, bucket_abs_idx: usize, key: u64, fp: u8) ?usize {
         var mask = matchFingerprint(&self.fingerprints[bucket_abs_idx], fp);
         while (mask != 0) {
             const slot = @ctz(mask);
