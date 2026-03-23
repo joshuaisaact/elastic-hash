@@ -471,39 +471,9 @@ pub const HybridElasticHash = struct {
     pub fn insert(self: *Self, key: u64, value: u64) void {
         const h = hash(key);
         const fp = fingerprint(h);
-        const i = self.current_batch;
 
-        if (i == 0) {
-            self.insertIntoTier(0, h, fp, key, value);
-            if (self.getEmptyFraction(0) <= 0.12) {
-                self.current_batch = 1;
-            }
-            return;
-        }
-
-        if (i >= self.num_tiers) {
-            self.insertAnyTier(h, fp, key, value);
-            return;
-        }
-
-        const primary = i - 1;
-        const secondary = i;
-        const e1 = self.getEmptyFraction(primary);
-        const e2 = self.getEmptyFraction(secondary);
-
-        if (e1 > DELTA_HALF and e2 > 0.25) {
-            if (!self.tryInsertWithLimit(primary, h, fp, key, value, probeLimit(e1))) {
-                self.insertIntoTier(secondary, h, fp, key, value);
-            }
-        } else if (e1 <= DELTA_HALF) {
-            self.insertIntoTier(secondary, h, fp, key, value);
-        } else {
-            self.insertIntoTier(primary, h, fp, key, value);
-        }
-
-        if (e1 <= DELTA_HALF and e2 <= 0.25 and i + 1 < self.num_tiers) {
-            self.current_batch = i + 1;
-        }
+        // Always try tier 0 first to maximize get() hit rate
+        self.insertIntoTier(0, h, fp, key, value);
     }
 
     fn insertIntoTier(self: *Self, tier: usize, h: u64, fp: u8, key: u64, value: u64) void {
