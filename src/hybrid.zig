@@ -6,8 +6,7 @@ const math = std.math;
 
 pub const BUCKET_SIZE = 16;
 const MAX_PROBES = 7;
-const EMPTY: u8 = 0x80;
-const TOMBSTONE: u8 = 0xFE;
+const TOMBSTONE: u8 = 0xFF;
 
 // Paper parameters
 const DELTA: f64 = 0.01; // δ = 1% slack parameter
@@ -61,7 +60,7 @@ pub fn ComptimeHybridElasticHash(comptime capacity: usize) type {
 
         pub fn init(allocator: std.mem.Allocator) !Self {
             const fingerprints = try allocator.create([total_buckets][BUCKET_SIZE]u8);
-            @memset(fingerprints, [_]u8{EMPTY} ** BUCKET_SIZE);
+            @memset(fingerprints, [_]u8{0} ** BUCKET_SIZE);
 
             const keys = try allocator.create([total_buckets][BUCKET_SIZE]u64);
             const values = try allocator.create([total_buckets][BUCKET_SIZE]u64);
@@ -90,8 +89,8 @@ pub fn ComptimeHybridElasticHash(comptime capacity: usize) type {
         }
 
         inline fn fingerprint(h: u64) u8 {
-            const raw: u8 = @truncate(h >> 56);
-            return (raw & 0x7F) | 1;
+            const fp: u8 = @truncate(h >> 56);
+            return if (fp == 0) 1 else fp;
         }
 
         inline fn bucketIndex(h: u64, probe: usize, comptime num_buckets: usize) usize {
@@ -109,8 +108,8 @@ pub fn ComptimeHybridElasticHash(comptime capacity: usize) type {
         inline fn simdMatchEmpty(fps: *const [BUCKET_SIZE]u8) u16 {
             const Vec = @Vector(BUCKET_SIZE, u8);
             const fp_vec: Vec = fps.*;
-            const threshold: Vec = @splat(0x7F);
-            return @bitCast(fp_vec > threshold);
+            const zeros: Vec = @splat(0);
+            return @bitCast(fp_vec == zeros);
         }
 
         inline fn findKeyInBucket(self: *const Self, comptime tier: usize, rel_idx: usize, key: u64, fp: u8) ?usize {
@@ -297,17 +296,24 @@ inline fn matchFingerprint(fps: *const [BUCKET_SIZE]u8, fp: u8) u16 {
     return @bitCast(matches);
 }
 
-/// SIMD empty/tombstone matching: any byte with MSB set (>= 0x80)
-/// With abseil-style encoding: empty=0x80, tombstone=0xFE, valid=0x01-0x7F
+/// SIMD empty slot matching
 inline fn matchEmpty(fps: *const [BUCKET_SIZE]u8) u16 {
     const fp_vec: FpVector = fps.*;
-    const threshold: FpVector = @splat(0x7F);
-    return @bitCast(fp_vec > threshold);
+    const zeros: FpVector = @splat(0);
+    const empties = fp_vec == zeros;
+    return @bitCast(empties);
 }
 
-/// Same as matchEmpty — both empty and tombstone have MSB set
+/// SIMD empty or tombstone matching (for insertion)
 inline fn matchEmptyOrTombstone(fps: *const [BUCKET_SIZE]u8) u16 {
-    return matchEmpty(fps);
+    const fp_vec: FpVector = fps.*;
+    const zeros: FpVector = @splat(0);
+    const tombstones: FpVector = @splat(TOMBSTONE);
+    const empty_mask = fp_vec == zeros;
+    const tombstone_mask = fp_vec == tombstones;
+    const empty_bits: u16 = @bitCast(empty_mask);
+    const tombstone_bits: u16 = @bitCast(tombstone_mask);
+    return empty_bits | tombstone_bits;
 }
 
 const Entry = extern struct {
@@ -360,7 +366,7 @@ pub const HybridElasticHash = struct {
         const entries = try allocator.alloc([BUCKET_SIZE]Entry, total_buckets);
 
         for (fingerprints) |*bucket_fps| {
-            @memset(bucket_fps, EMPTY);
+            @memset(bucket_fps, 0);
         }
 
         return .{
@@ -395,9 +401,9 @@ pub const HybridElasticHash = struct {
     }
 
     inline fn fingerprint(h: u64) u8 {
-        // 7-bit fingerprint (0x01-0x7F), MSB always 0 to distinguish from empty/tombstone
-        const raw: u8 = @truncate(h >> 32);
-        return (raw & 0x7F) | 1; // range 1-127, never 0
+        // Use bits 32-39 for fingerprint (less correlated with bucket index from low bits)
+        const fp: u8 = @truncate(h >> 32);
+        return if (fp == 0) 1 else if (fp == TOMBSTONE) 0xFE else fp;
     }
 
     inline fn bucketIndex(h: u64, probe: usize, num_buckets: usize) usize {
@@ -572,21 +578,7 @@ pub const HybridElasticHash = struct {
 
         for (0..MAX_PROBES) |probe| {
             const bucket_idx = (bucket_base +% @as(u64, probe)) & mask;
-            const fp_vec: FpVector = self.fingerprints[bucket_idx];
-
-            // Check fingerprint matches
-            const needle: FpVector = @splat(fp);
-            var match_mask: u16 = @bitCast(fp_vec == needle);
-            while (match_mask != 0) {
-                const slot = @ctz(match_mask);
-                if (self.entries[bucket_idx][slot].key == key) return self.entries[bucket_idx][slot].value;
-                match_mask &= match_mask - 1;
-            }
-
-            // Early termination: any byte with MSB set means empty slot exists
-            // With abseil-style encoding, this is a single comparison, no extra load
-            const threshold: FpVector = @splat(0x7F);
-            if (@as(u16, @bitCast(fp_vec > threshold)) != 0) return null;
+            if (self.findValueInBucket(bucket_idx, key, fp)) |val| return val;
         }
         return null;
     }
