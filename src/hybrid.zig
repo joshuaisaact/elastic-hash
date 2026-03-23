@@ -333,7 +333,6 @@ pub const HybridElasticHash = struct {
     total_buckets: usize,
     // Cached tier 0 metadata to avoid heap reads in hot path
     tier0_bucket_count: usize,
-    tier0_start: usize,
     count: usize = 0,
     current_batch: usize = 0,
 
@@ -377,7 +376,6 @@ pub const HybridElasticHash = struct {
             .num_tiers = num_tiers,
             .total_buckets = total_buckets,
             .tier0_bucket_count = tier_bucket_counts[0],
-            .tier0_start = tier_starts[0],
         };
     }
 
