@@ -579,6 +579,7 @@ pub const HybridElasticHash = struct {
         for (0..MAX_PROBES) |probe| {
             const bucket_idx = (bucket_base +% @as(u64, probe)) & mask;
             if (self.findValueInBucket(bucket_idx, key, fp)) |val| return val;
+            if (matchEmpty(&self.fingerprints[bucket_idx]) != 0) return null;
         }
         return null;
     }
