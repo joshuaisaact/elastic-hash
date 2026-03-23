@@ -570,6 +570,8 @@ pub const HybridElasticHash = struct {
 
         // Check probe 0 (most lookups hit here)
         const bucket0 = h & mask;
+        // Prefetch entries for probe 0 (random access, hardware prefetcher can't predict)
+        @prefetch(@as([*]const u8, @ptrCast(&self.entries[bucket0])), .{ .rw = .read, .locality = 3 });
         if (self.findValueInBucket(bucket0, key, fp)) |val| return val;
 
         // Remaining probes
