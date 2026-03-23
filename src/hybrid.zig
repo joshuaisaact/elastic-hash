@@ -492,8 +492,9 @@ pub const HybridElasticHash = struct {
 
     fn insertIntoTier(self: *Self, tier: usize, h: u64, fp: u8, key: u64, value: u64) void {
         const num_buckets = self.tier_bucket_counts[tier];
+        const max_probe = @min(num_buckets, MAX_PROBES);
         var probe: usize = 0;
-        while (probe < num_buckets) : (probe += 1) {
+        while (probe < max_probe) : (probe += 1) {
             const rel_bucket_idx = bucketIndex(h, probe, num_buckets);
             const abs_bucket_idx = self.getBucketIdx(tier, rel_bucket_idx);
 
