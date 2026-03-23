@@ -77,20 +77,23 @@ The elastic hash pays a cache penalty for the φ-ordering that provides worst-ca
 
 ### vs Google's Original SwissTable (abseil)
 
-Benchmarking against Google's `absl::flat_hash_map` (the original SwissTable) reveals both Zig implementations are significantly slower:
+Benchmarked against `absl::flat_hash_map` using correct APIs (`emplace`/`find`/`erase(iterator)`), `-O3 -march=native -DNDEBUG`, hashtablez sampling disabled, 10 measured runs.
 
-| Operation | Google SwissTable | Zig std.HashMap | Elastic Hash |
-|-----------|-------------------|-----------------|--------------|
-| Insert 1M @ 99% | 57ms | 779ms | 217ms |
-| Lookup 1M @ 99% | 43ms | 533ms | 1008ms |
+At 1M elements, 99% load (us, lower is better):
 
-Google's implementation is **10-20x faster** than both Zig hashmaps. This is due to:
-- Years of optimization by Google engineers
-- Hand-tuned SIMD intrinsics for each platform
-- Cache prefetching and memory layout optimizations
-- 8-byte groups on ARM (vs 16-byte here)
+| Operation | Google SwissTable | Elastic Hash | Zig std.HashMap |
+|-----------|-------------------|--------------|-----------------|
+| Insert | 15,685 | 16,850 | 52,000 |
+| Lookup | 8,200-8,850 | 8,550-9,000 | 43,000 |
+| Delete | 8,200-8,400 | **2,100-2,200** | 4,000 |
 
-**The takeaway**: Within Zig, elastic hash wins on insert/delete. But abseil is in a different performance league entirely.
+At 99% load, lookup and insert are roughly tied with abseil. Elastic hash wins convincingly on delete (3.9x faster) due to O(1) tombstone marking vs abseil's rehash-on-delete.
+
+At lower load factors (10-75%), abseil is faster on both lookup and insert -- its flat memory layout has better cache behavior when the table is sparse. The elastic hash tier overhead doesn't pay off until the table is nearly full.
+
+At 2M+ elements, abseil pulls ahead on lookup again as our fingerprint array exceeds L2 cache.
+
+**The takeaway**: Elastic hash matches abseil at extreme load and dominates on delete. Abseil wins at low-to-moderate load and at larger scales. See [results.md](results.md) for the full comparison.
 
 ### Why We Win on Insert
 

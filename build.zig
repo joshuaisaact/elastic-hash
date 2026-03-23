@@ -59,4 +59,18 @@ pub fn build(b: *std.Build) void {
     }
     const bench_step = b.step("bench", "Run benchmarks");
     bench_step.dependOn(&run_bench.step);
+
+    // Autoresearch benchmark (focused, machine-parseable output)
+    const autobench = b.addExecutable(.{
+        .name = "autobench",
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("src/autobench.zig"),
+            .target = target,
+            .optimize = optimize,
+        }),
+    });
+
+    const run_autobench = b.addRunArtifact(autobench);
+    const autobench_step = b.step("autobench", "Run autoresearch benchmark");
+    autobench_step.dependOn(&run_autobench.step);
 }
