@@ -559,8 +559,10 @@ pub const HybridElasticHash = struct {
         const fp = fingerprint(h);
         const search_tiers = @min(self.num_tiers, MAX_LOOKUP_TIERS);
 
-        inline for (0..MAX_PROBES) |probe| {
+        var j: usize = 1;
+        while (j <= MAX_PROBES) : (j += 1) {
             for (0..search_tiers) |tier| {
+                const probe = j - 1;
                 const num_buckets = self.tier_bucket_counts[tier];
                 if (probe >= num_buckets) continue;
 
