@@ -558,22 +558,10 @@ pub const HybridElasticHash = struct {
         const h = hash(key);
         const fp = fingerprint(h);
 
-        // Fast path: check tier 0 probe 0 first (hits ~40-50% of lookups)
-        {
-            const num_buckets = self.tier_bucket_counts[0];
-            const rel_idx = bucketIndex(h, 0, num_buckets);
-            const abs_idx = self.tier_starts[0] + rel_idx;
-            if (self.findKeyInBucket(abs_idx, key, fp)) |slot| {
-                return self.values[abs_idx][slot];
-            }
-        }
-
         var j: usize = 1;
         while (j <= MAX_PROBES) : (j += 1) {
             for (0..self.num_tiers) |tier| {
                 const probe = j - 1;
-                // Skip tier 0 probe 0 - already checked
-                if (tier == 0 and probe == 0) continue;
                 const num_buckets = self.tier_bucket_counts[tier];
                 if (probe >= num_buckets) continue;
 
