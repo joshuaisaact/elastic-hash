@@ -554,21 +554,35 @@ pub const HybridElasticHash = struct {
         const h = hash(key);
         const fp = fingerprint(h);
         const mask = self.tier0_bucket_mask;
+        const needle: FpVector = @splat(fp);
+        const zeros: FpVector = @splat(0);
 
         // Check probe 0 (most lookups hit here)
         const bucket0 = h & mask;
-        if (self.findKeyInBucket(bucket0, key, fp)) |slot| {
-            return self.entries[bucket0][slot].value;
+        {
+            const fp_vec: FpVector = self.fingerprints[bucket0];
+            var match_mask: u16 = @bitCast(fp_vec == needle);
+            while (match_mask != 0) {
+                const slot = @ctz(match_mask);
+                if (self.entries[bucket0][slot].key == key) return self.entries[bucket0][slot].value;
+                match_mask &= match_mask - 1;
+            }
+            // Early termination: empty slot means key can't be deeper
+            if (@as(u16, @bitCast(fp_vec == zeros)) != 0) return null;
         }
 
-        // Remaining probes
+        // Remaining probes with early termination
         var probe: usize = 1;
         while (probe < MAX_PROBES) : (probe += 1) {
             const bucket_idx = (h +% @as(u64, probe)) & mask;
-
-            if (self.findKeyInBucket(bucket_idx, key, fp)) |slot| {
-                return self.entries[bucket_idx][slot].value;
+            const fp_vec: FpVector = self.fingerprints[bucket_idx];
+            var match_mask: u16 = @bitCast(fp_vec == needle);
+            while (match_mask != 0) {
+                const slot = @ctz(match_mask);
+                if (self.entries[bucket_idx][slot].key == key) return self.entries[bucket_idx][slot].value;
+                match_mask &= match_mask - 1;
             }
+            if (@as(u16, @bitCast(fp_vec == zeros)) != 0) return null;
         }
         return null;
     }
