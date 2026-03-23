@@ -333,6 +333,7 @@ pub const HybridElasticHash = struct {
     total_buckets: usize,
     // Cached tier 0 metadata to avoid heap reads in hot path
     tier0_bucket_count: usize,
+    tier0_bucket_mask: usize,
     count: usize = 0,
     current_batch: usize = 0,
 
@@ -376,6 +377,7 @@ pub const HybridElasticHash = struct {
             .num_tiers = num_tiers,
             .total_buckets = total_buckets,
             .tier0_bucket_count = tier_bucket_counts[0],
+            .tier0_bucket_mask = tier_bucket_counts[0] - 1,
         };
     }
 
@@ -552,11 +554,11 @@ pub const HybridElasticHash = struct {
     pub fn get(self: *const Self, key: u64) ?u64 {
         const h = hash(key);
         const fp = fingerprint(h);
-        const num_buckets = self.tier0_bucket_count;
+        const mask = self.tier0_bucket_mask;
 
         var probe: usize = 0;
         while (probe < MAX_PROBES) : (probe += 1) {
-            const bucket_idx = bucketIndex(h, probe, num_buckets);
+            const bucket_idx = (h +% @as(u64, probe)) & mask;
 
             if (self.findKeyInBucket(bucket_idx, key, fp)) |slot| {
                 return self.values[bucket_idx][slot];
@@ -568,11 +570,11 @@ pub const HybridElasticHash = struct {
     pub fn remove(self: *Self, key: u64) bool {
         const h = hash(key);
         const fp = fingerprint(h);
-        const num_buckets = self.tier0_bucket_count;
+        const mask = self.tier0_bucket_mask;
 
         var probe: usize = 0;
         while (probe < MAX_PROBES) : (probe += 1) {
-            const bucket_idx = bucketIndex(h, probe, num_buckets);
+            const bucket_idx = (h +% @as(u64, probe)) & mask;
 
             if (self.findKeyInBucket(bucket_idx, key, fp)) |slot| {
                 self.fingerprints[bucket_idx][slot] = TOMBSTONE;
