@@ -573,14 +573,10 @@ pub const HybridElasticHash = struct {
         const mask = self.tier0_bucket_mask;
         const bucket_base = h >> self.tier0_bucket_shift;
 
-        // Check probe 0 (most lookups hit here)
-        const bucket0 = bucket_base & mask;
         // Prefetch entries for probe 0 (random access, hardware prefetcher can't predict)
-        @prefetch(@as([*]const u8, @ptrCast(&self.entries[bucket0])), .{ .rw = .read, .locality = 3 });
-        if (self.findValueInBucket(bucket0, key, fp)) |val| return val;
+        @prefetch(@as([*]const u8, @ptrCast(&self.entries[bucket_base & mask])), .{ .rw = .read, .locality = 3 });
 
-        // Remaining probes
-        var probe: usize = 1;
+        var probe: usize = 0;
         while (probe < MAX_PROBES) : (probe += 1) {
             const bucket_idx = (bucket_base +% @as(u64, probe)) & mask;
             if (self.findValueInBucket(bucket_idx, key, fp)) |val| return val;
