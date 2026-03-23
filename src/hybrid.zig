@@ -316,13 +316,17 @@ inline fn matchEmptyOrTombstone(fps: *const [BUCKET_SIZE]u8) u16 {
     return empty_bits | tombstone_bits;
 }
 
+const Entry = extern struct {
+    key: u64,
+    value: u64,
+};
+
 pub const HybridElasticHash = struct {
     const Self = @This();
 
     // Hot path fields first (get/remove) - fit in first cache line
     fingerprints: [][BUCKET_SIZE]u8,
-    keys: [][BUCKET_SIZE]u64,
-    values: [][BUCKET_SIZE]u64,
+    entries: [][BUCKET_SIZE]Entry,
     tier0_bucket_mask: usize,
 
     // Insert/management fields
@@ -358,8 +362,7 @@ pub const HybridElasticHash = struct {
         }
 
         const fingerprints = try allocator.alloc([BUCKET_SIZE]u8, total_buckets);
-        const keys = try allocator.alloc([BUCKET_SIZE]u64, total_buckets);
-        const values = try allocator.alloc([BUCKET_SIZE]u64, total_buckets);
+        const entries = try allocator.alloc([BUCKET_SIZE]Entry, total_buckets);
 
         for (fingerprints) |*bucket_fps| {
             @memset(bucket_fps, 0);
@@ -368,8 +371,7 @@ pub const HybridElasticHash = struct {
         return .{
             .allocator = allocator,
             .fingerprints = fingerprints,
-            .keys = keys,
-            .values = values,
+            .entries = entries,
             .tier_starts = tier_starts,
             .tier_bucket_counts = tier_bucket_counts,
             .tier_slot_counts = tier_slot_counts,
@@ -382,8 +384,7 @@ pub const HybridElasticHash = struct {
 
     pub fn deinit(self: *Self) void {
         self.allocator.free(self.fingerprints);
-        self.allocator.free(self.keys);
-        self.allocator.free(self.values);
+        self.allocator.free(self.entries);
         self.allocator.free(self.tier_starts);
         self.allocator.free(self.tier_bucket_counts);
         self.allocator.free(self.tier_slot_counts);
@@ -427,11 +428,11 @@ pub const HybridElasticHash = struct {
         if (mask == 0) return null;
         // Fast path: single match (most common, ~94% of non-empty matches)
         const slot = @ctz(mask);
-        if (self.keys[bucket_abs_idx][slot] == key) return slot;
+        if (self.entries[bucket_abs_idx][slot].key == key) return slot;
         mask &= mask - 1;
         while (mask != 0) {
             const s = @ctz(mask);
-            if (self.keys[bucket_abs_idx][s] == key) return s;
+            if (self.entries[bucket_abs_idx][s].key == key) return s;
             mask &= mask - 1;
         }
         return null;
@@ -451,8 +452,7 @@ pub const HybridElasticHash = struct {
 
     inline fn insertAt(self: *Self, bucket_abs_idx: usize, slot: usize, key: u64, value: u64, fp: u8) void {
         self.fingerprints[bucket_abs_idx][slot] = fp;
-        self.keys[bucket_abs_idx][slot] = key;
-        self.values[bucket_abs_idx][slot] = value;
+        self.entries[bucket_abs_idx][slot] = .{ .key = key, .value = value };
     }
 
     pub fn insert(self: *Self, key: u64, value: u64) void {
@@ -558,7 +558,7 @@ pub const HybridElasticHash = struct {
         // Check probe 0 (most lookups hit here)
         const bucket0 = h & mask;
         if (self.findKeyInBucket(bucket0, key, fp)) |slot| {
-            return self.values[bucket0][slot];
+            return self.entries[bucket0][slot].value;
         }
 
         // Remaining probes
@@ -567,7 +567,7 @@ pub const HybridElasticHash = struct {
             const bucket_idx = (h +% @as(u64, probe)) & mask;
 
             if (self.findKeyInBucket(bucket_idx, key, fp)) |slot| {
-                return self.values[bucket_idx][slot];
+                return self.entries[bucket_idx][slot].value;
             }
         }
         return null;
@@ -608,7 +608,7 @@ pub const HybridElasticHash = struct {
                 const abs_bucket_idx = self.getBucketIdx(tier, rel_bucket_idx);
 
                 if (self.findKeyInBucket(abs_bucket_idx, key, fp)) |slot| {
-                    return .{ .value = self.values[abs_bucket_idx][slot], .bucket_probes = bucket_probes };
+                    return .{ .value = self.entries[abs_bucket_idx][slot].value, .bucket_probes = bucket_probes };
                 }
             }
         }
