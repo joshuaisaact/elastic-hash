@@ -583,10 +583,14 @@ pub const HybridElasticHash = struct {
             if (self.findValueInBucket(bucket_idx, key, fp)) |val| return val;
         }
 
-        // Check tier 1 probe 0 (paper-faithful: ~2.7% of elements at 99% load)
+        // Search tier 1 if it exists (paper-faithful: ~2.7% of elements at 99% load)
         if (self.num_tiers > 1) {
-            const abs_idx = self.tier_starts[1] + bucketIndex(h, 0, self.tier_bucket_counts[1]);
-            if (self.findValueInBucket(abs_idx, key, fp)) |val| return val;
+            const t1_buckets = self.tier_bucket_counts[1];
+            const t1_start = self.tier_starts[1];
+            for (0..@min(MAX_PROBES, t1_buckets)) |probe| {
+                const rel_idx = bucketIndex(h, probe, t1_buckets);
+                if (self.findValueInBucket(t1_start + rel_idx, key, fp)) |val| return val;
+            }
         }
         return null;
     }
