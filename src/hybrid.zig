@@ -426,13 +426,26 @@ pub const HybridElasticHash = struct {
     inline fn findKeyInBucket(self: *const Self, bucket_abs_idx: usize, key: u64, fp: u8) ?usize {
         var mask = matchFingerprint(&self.fingerprints[bucket_abs_idx], fp);
         if (mask == 0) return null;
-        // Fast path: single match (most common, ~94% of non-empty matches)
         const slot = @ctz(mask);
         if (self.entries[bucket_abs_idx][slot].key == key) return slot;
         mask &= mask - 1;
         while (mask != 0) {
             const s = @ctz(mask);
             if (self.entries[bucket_abs_idx][s].key == key) return s;
+            mask &= mask - 1;
+        }
+        return null;
+    }
+
+    inline fn findValueInBucket(self: *const Self, bucket_abs_idx: usize, key: u64, fp: u8) ?u64 {
+        var mask = matchFingerprint(&self.fingerprints[bucket_abs_idx], fp);
+        if (mask == 0) return null;
+        const slot = @ctz(mask);
+        if (self.entries[bucket_abs_idx][slot].key == key) return self.entries[bucket_abs_idx][slot].value;
+        mask &= mask - 1;
+        while (mask != 0) {
+            const s = @ctz(mask);
+            if (self.entries[bucket_abs_idx][s].key == key) return self.entries[bucket_abs_idx][s].value;
             mask &= mask - 1;
         }
         return null;
@@ -557,18 +570,13 @@ pub const HybridElasticHash = struct {
 
         // Check probe 0 (most lookups hit here)
         const bucket0 = h & mask;
-        if (self.findKeyInBucket(bucket0, key, fp)) |slot| {
-            return self.entries[bucket0][slot].value;
-        }
+        if (self.findValueInBucket(bucket0, key, fp)) |val| return val;
 
         // Remaining probes
         var probe: usize = 1;
         while (probe < MAX_PROBES) : (probe += 1) {
             const bucket_idx = (h +% @as(u64, probe)) & mask;
-
-            if (self.findKeyInBucket(bucket_idx, key, fp)) |slot| {
-                return self.entries[bucket_idx][slot].value;
-            }
+            if (self.findValueInBucket(bucket_idx, key, fp)) |val| return val;
         }
         return null;
     }
