@@ -410,7 +410,7 @@ pub const HybridElasticHash = struct {
         const bits: u7 = @intCast(@ctz(num_buckets));
         const shift: u6 = @intCast(@min(64 - bits, 63));
         const base = h >> shift;
-        return (base +% @as(u64, probe) *% 3) & (num_buckets - 1);
+        return (base +% @as(u64, probe)) & (num_buckets - 1);
     }
 
     fn getEmptyFraction(self: *const Self, tier: usize) f64 {
@@ -577,7 +577,7 @@ pub const HybridElasticHash = struct {
         @prefetch(@as([*]const u8, @ptrCast(&self.entries[bucket_base & mask])), .{ .rw = .read, .locality = 3 });
 
         for (0..MAX_PROBES) |probe| {
-            const bucket_idx = (bucket_base +% @as(u64, probe) *% 3) & mask;
+            const bucket_idx = (bucket_base +% @as(u64, probe)) & mask;
             if (self.findValueInBucket(bucket_idx, key, fp)) |val| return val;
         }
         return null;
@@ -591,7 +591,7 @@ pub const HybridElasticHash = struct {
 
         var probe: usize = 0;
         while (probe < MAX_PROBES) : (probe += 1) {
-            const bucket_idx = (bucket_base +% @as(u64, probe) *% 3) & mask;
+            const bucket_idx = (bucket_base +% @as(u64, probe)) & mask;
 
             if (self.findKeyInBucket(bucket_idx, key, fp)) |slot| {
                 self.fingerprints[bucket_idx][slot] = TOMBSTONE;
