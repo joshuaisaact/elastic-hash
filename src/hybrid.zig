@@ -5,7 +5,7 @@ const std = @import("std");
 const math = std.math;
 
 pub const BUCKET_SIZE = 16;
-const MAX_PROBES = 10;
+const MAX_PROBES = 8;
 const TOMBSTONE: u8 = 0xFF;
 
 // Paper parameters
