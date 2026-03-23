@@ -405,7 +405,7 @@ pub const HybridElasticHash = struct {
     }
 
     inline fn bucketIndex(h: u64, probe: usize, num_buckets: usize) usize {
-        return (h +% @as(u64, probe *% (probe + 1) / 2)) & (num_buckets - 1);
+        return (h +% @as(u64, probe)) & (num_buckets - 1);
     }
 
     fn getEmptyFraction(self: *const Self, tier: usize) f64 {
