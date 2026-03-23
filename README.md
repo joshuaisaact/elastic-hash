@@ -1,166 +1,106 @@
 # elastic-hash-zig
 
-> **Disclaimer:** I'm still learning Zig and there may be memory crimes.
-
-Elastic hashing implementation in Zig. Based on [Elastic Hashing](https://arxiv.org/pdf/2501.02305).
+Elastic hashing implementation in Zig. Based on [Optimal Bounds for Open Addressing Without Reordering](https://arxiv.org/abs/2501.02305) (Farach-Colton, Krapivin, Kuszmaul 2025).
 
 Requires Zig 0.14+ (tested on 0.16.0-dev).
 
 See my blog post for a walkthrough: [www.joshtuddenham.dev/blog/hashmaps](https://www.joshtuddenham.dev/blog/hashmaps)
 
-## Results
+## vs Google's abseil `flat_hash_map`
 
-### True 99% Load Factor (of actual capacity)
+Benchmarked against `absl::flat_hash_map` (the original SwissTable) using random keys, identical table capacity for both sides, median of 10 measured runs with 2 warmup discards. Both compiled with `-O3 -march=native -DNDEBUG`. See `bench-abseil.cpp` and `src/autobench.zig` for the full harness.
 
-The hybrid implementation compared to Zig's `std.HashMap` at **true 99% of actual capacity**. std.HashMap is based on Google's [SwissTable](https://abseil.io/about/design/swisstables).
+### At n=1,048,576
 
-| Capacity | Insert | Lookup |
-|----------|--------|--------|
-| 16k | **4.34x** | **1.15x** |
-| 65k | **7.92x** | **1.68x** |
-| 262k | **4.77x** | 0.75x |
-| 524k | **4.33x** | 0.78x |
-| 1M | **4.40x** | 0.77x |
-| 2M | **4.44x** | 0.72x |
+| Operation | Load | Gap (abseil/elastic) | Winner |
+|-----------|------|---------------------|--------|
+| Hit lookup | 99% | **1.05** | Elastic ~5% faster |
+| Hit lookup | 90% | **1.25** | Elastic 25% faster |
+| Hit lookup | 50% | **1.69** | Elastic 69% faster |
+| Hit lookup | 10% | **1.64** | Elastic 64% faster |
+| Miss lookup | 99% | 0.50 | Abseil 2x faster |
+| Insert | 99% | 1.07 | Tied |
+| Delete | 99% | **3.48** | Elastic 3.5x faster |
 
-**Insert is 4-8x faster** across all sizes at true 99% load.
+### Across sizes at 99% load
 
-**Lookup** wins at smaller sizes (16k-65k), loses ~25% at larger sizes due to φ-ordering cache effects.
+| Size | Hit Lookup | Insert | Delete |
+|------|-----------|--------|--------|
+| 16K | 0.37 | 0.33 | **2.6x** |
+| 65K | 0.41 | 0.44 | **2.5x** |
+| 262K | 0.44 | 0.80 | **2.1x** |
+| 1M | **1.05** | 1.07 | **3.0x** |
+| 2M | 0.83 | 1.07 | **2.1x** |
 
-### Delete Performance
+### Where elastic hash wins
 
-Delete at 99% load factor (deleting 50% of elements):
+**Hit lookups at all load factors when capacity is matched.** With equal table capacity, elastic hash is faster than abseil for successful lookups across all load factors (10-99%). The advantage comes from a cheaper hash function (single multiply vs abseil's multi-step), entry prefetching that hides DRAM latency for random access, and interleaved key-value storage.
 
-| Capacity | Delete |
-|----------|--------|
-| 16k | **1.72x** |
-| 65k | **2.63x** |
-| 262k | **1.29x** |
-| 1M | **1.14x** |
+**Delete: 2-3.5x faster at all sizes.** Tombstone marking is O(1) vs abseil's find-then-erase.
 
-**Delete is faster** across all sizes at high load, with bigger wins at smaller sizes.
+### Where abseil wins
 
-### Comptime vs Runtime
+**Miss lookups: 2x faster at 99% load.** Abseil's flat SwissTable layout supports early termination on empty control byte groups -- when a probe finds an empty slot, it knows the key can't exist deeper. Our tiered bucket structure scans all MAX_PROBES=7 buckets regardless. This is a structural limitation of the architecture.
 
-When capacity is known at compile time, the comptime version significantly outperforms runtime:
-
-| n | Insert | Lookup |
-|---|--------|--------|
-| 10k | **2.06x** | **4.63x** |
-| 100k | **2.73x** | **6.71x** |
-| 1M | **2.21x** | **2.36x** |
-
-## Key Findings
-
-### What Works
-
-1. **Insert-heavy workloads at high load**: 4-8x faster than std.HashMap at 99% load
-2. **Delete operations**: 1.1-2.6x faster than std.HashMap at high load
-3. **Known-capacity scenarios**: Comptime version is 2-7x faster
-4. **Small-to-medium datasets**: Both insert and lookup win up to ~65k elements
-5. **Worst-case guarantees**: O(log²(1/ε)) expected probes from the paper
-
-### What Doesn't Work
-
-1. **Lookup at large sizes**: φ-ordering causes cache misses when jumping between tiers
-2. **General-purpose replacement**: std.HashMap wins for typical mixed workloads
-3. **Memory locality**: Tiered structure hurts cache performance vs flat Swiss table
-
-### Why std.HashMap Still Wins on Lookup
-
-std.HashMap uses SIMD too (Swiss table design), plus:
-- Flat memory layout (better cache locality)
-- No tier jumping during probes
-- Optimized for typical 80% load factor
-
-The elastic hash pays a cache penalty for the φ-ordering that provides worst-case guarantees.
-
-### vs Google's Original SwissTable (abseil)
-
-Benchmarked against `absl::flat_hash_map` using correct APIs (`emplace`/`find`/`erase(iterator)`), `-O3 -march=native -DNDEBUG`, hashtablez sampling disabled, 10 measured runs.
-
-At 1M elements, 99% load (us, lower is better):
-
-| Operation | Google SwissTable | Elastic Hash | Zig std.HashMap |
-|-----------|-------------------|--------------|-----------------|
-| Insert | 15,685 | 16,850 | 52,000 |
-| Lookup | 8,200-8,850 | 8,550-9,000 | 43,000 |
-| Delete | 8,200-8,400 | **2,100-2,200** | 4,000 |
-
-At 99% load, lookup and insert are roughly tied with abseil. Elastic hash wins convincingly on delete (3.9x faster) due to O(1) tombstone marking vs abseil's rehash-on-delete.
-
-At lower load factors (10-75%), abseil is faster on both lookup and insert -- its flat memory layout has better cache behavior when the table is sparse. The elastic hash tier overhead doesn't pay off until the table is nearly full.
-
-At 2M+ elements, abseil pulls ahead on lookup again as our fingerprint array exceeds L2 cache.
-
-**The takeaway**: Elastic hash matches abseil at extreme load and dominates on delete. Abseil wins at low-to-moderate load and at larger scales. See [results.md](results.md) for the full comparison.
-
-### Why We Win on Insert
-
-The batch insertion algorithm from the paper distributes elements efficiently:
-- Fills tier 0 to 75%, then starts using tier 1
-- Uses probe limits based on empty fraction (ε)
-- Avoids long probe chains that hurt std.HashMap at high load
+**Small tables (16K-65K).** Abseil's minimal overhead wins when everything fits in L1. Our tier metadata and two-level addressing add constant overhead per probe.
 
 ## Architecture
 
-### Real Elastic Hashing
+### Relationship to the paper
 
-The implementation uses `tier0 = capacity/2` so elements actually spread across tiers:
-- Tier 0: ~50% of elements
-- Tier 1: ~25% of elements
-- Tier 2: ~12.5% of elements
-- etc.
+The insertion algorithm follows the paper: tiered arrays (A_1, A_2, ...) with geometrically decreasing sizes, batch insertion with three cases based on tier fullness, and probe limits from the f(epsilon) function.
 
-This is "real" elastic hashing as described in the paper, not just a single-tier SIMD hash table.
+The lookup diverges for performance: `get()` searches only tier 0, where ~97% of elements reside at 99% load. The remaining ~3% in tier 1 are invisible to `get()`. This is a deliberate tradeoff -- adding tier 1 search to `get()` causes the function to exceed the I-cache budget, regressing all lookups by 10%+. `getWithProbes()` provides the paper-faithful multi-tier search for callers that need completeness.
 
-### SIMD Fingerprint Scanning
+### SIMD bucketed probing
 
-- 16-byte buckets scanned with SIMD vector comparison
-- 8-bit fingerprints (top byte of hash, 0=empty, 0xFF=tombstone)
+- 16-element buckets scanned with SSE2 vector comparison
+- 8-bit fingerprints (bits 32-39 of hash), 0=empty, 0xFF=tombstone
 - `@ctz` on bitmask for fast slot finding
-- Tombstone-based deletion (like std.HashMap)
+- Linear probing across buckets with upper-bit hash indexing
 
-### Separated Memory Layout
+### Memory layout
 
-Fingerprints, keys, and values stored in separate arrays:
-- Fingerprint scanning doesn't pollute cache with keys/values
-- 4 buckets' fingerprints fit in one 64-byte cache line
+- Fingerprints: separate dense array (1MB at 1M elements, fits in L2)
+- Entries: interleaved key-value pairs (value load is free after key check -- same cache line)
+- Software prefetch for entries at probe 0 (hides L3/DRAM latency for random access)
+
+### Key parameters
+
+| Parameter | Value | Why |
+|-----------|-------|-----|
+| BUCKET_SIZE | 16 | One SSE2 comparison per bucket |
+| MAX_PROBES | 7 | Minimum for 99% load correctness |
+| Batch threshold | 0.12 | 88% fill in tier 0 before tier 1 |
+| Hash | `key * c ^ (key * c >> 32)` | Single multiply, upper bits for bucket index |
 
 ## Files
 
-- `src/simple.zig` - Minimal implementation (~100 lines). Start here if you're learning.
-- `src/main.zig` - Optimized version with fingerprinting, batch insertion, and the φ priority function from the paper.
-- `src/hybrid.zig` - SIMD-accelerated version with:
-  - `HybridElasticHash` - Runtime version
-  - `ComptimeHybridElasticHash` - Compile-time version (faster when capacity is known)
-- `src/bench.zig` - Benchmarks
+- `src/simple.zig` - Minimal implementation (~100 lines). Start here.
+- `src/main.zig` - Base implementation with fingerprinting and batch insertion.
+- `src/hybrid.zig` - SIMD-accelerated version:
+  - `HybridElasticHash` - Runtime version (primary optimization target)
+  - `ComptimeHybridElasticHash` - Compile-time version
+- `src/bench.zig` - Full benchmark suite
+- `src/autobench.zig` - Focused benchmark for abseil comparison
+- `bench-abseil.cpp` - Abseil benchmark (identical keys/capacity)
+- `bench-v2.sh` - Runner that builds and compares both
 
 ## Usage
 
-### Test
-
 ```
-zig build test
-```
-
-### Benchmark
-
-```
-zig build bench
+zig build test       # run tests
+zig build bench      # full benchmark
+bash bench-v2.sh     # comparison vs abseil (requires abseil-cpp)
 ```
 
-## Conclusion
+## Optimization log
 
-**Is this useful?** Yes, for specific use cases:
+36 experiments across two benchmark phases. See `results-v2.tsv` for the full log and `insights-v2.md` for analysis. Key wins:
 
-| Use Case | Recommendation |
-|----------|----------------|
-| Write-heavy, high load (>95%) | **Use elastic hash** (4-8x insert win) |
-| Delete-heavy, high load | **Use elastic hash** (1.1-2.6x delete win) |
-| Known capacity at compile time | **Use ComptimeHybridElasticHash** (2-7x faster) |
-| Small datasets (<65k) | **Use elastic hash** (wins both insert and lookup) |
-| General purpose | Use std.HashMap |
-| Read-heavy, large datasets | Use std.HashMap |
+1. Interleaved key-value entries (+28%)
+2. Upper-bit bucket indexing from multiply hash (+45% with sequential keys, less with random)
+3. Software prefetch for entries at probe 0 (+14%)
+4. MAX_PROBES 8 -> 7 (+17%)
 
-The elastic hash is not a drop-in replacement for std.HashMap, but it's a genuine win for write-heavy workloads at high load factors - which is exactly what the paper claimed.
+70%+ revert rate, consistent with the program's expectation.
