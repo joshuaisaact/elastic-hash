@@ -560,14 +560,9 @@ pub const HybridElasticHash = struct {
         const fp = fingerprint(h);
         const search_tiers = @min(self.num_tiers, MAX_LOOKUP_TIERS);
 
-        // Bitmask: tiers where we found an empty slot (can stop probing)
-        var tier_done: u8 = 0;
-
         var j: usize = 1;
         while (j <= MAX_PROBES) : (j += 1) {
             for (0..search_tiers) |tier| {
-                if (tier_done & (@as(u8, 1) << @intCast(tier)) != 0) continue;
-
                 const probe = j - 1;
                 const num_buckets = self.tier_bucket_counts[tier];
                 if (probe >= num_buckets) continue;
@@ -575,24 +570,8 @@ pub const HybridElasticHash = struct {
                 const rel_bucket_idx = bucketIndex(h, probe, num_buckets);
                 const abs_bucket_idx = self.getBucketIdx(tier, rel_bucket_idx);
 
-                // Single SIMD load, two comparisons from same vector
-                const Vec = @Vector(BUCKET_SIZE, u8);
-                const fp_vec: Vec = self.fingerprints[abs_bucket_idx];
-                const needle: Vec = @splat(fp);
-                const zeros: Vec = @splat(0);
-
-                var fp_mask: u16 = @bitCast(fp_vec == needle);
-                while (fp_mask != 0) {
-                    const slot = @ctz(fp_mask);
-                    if (self.keys[abs_bucket_idx][slot] == key) {
-                        return self.values[abs_bucket_idx][slot];
-                    }
-                    fp_mask &= fp_mask - 1;
-                }
-
-                // Check for empty from same loaded vector
-                if (@as(u16, @bitCast(fp_vec == zeros)) != 0) {
-                    tier_done |= @as(u8, 1) << @intCast(tier);
+                if (self.findKeyInBucket(abs_bucket_idx, key, fp)) |slot| {
+                    return self.values[abs_bucket_idx][slot];
                 }
             }
         }
