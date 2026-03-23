@@ -420,11 +420,14 @@ pub const HybridElasticHash = struct {
 
     inline fn findKeyInBucket(self: *const Self, bucket_abs_idx: usize, key: u64, fp: u8) ?usize {
         var mask = matchFingerprint(&self.fingerprints[bucket_abs_idx], fp);
+        if (mask == 0) return null;
+        // Fast path: single match (most common, ~94% of non-empty matches)
+        const slot = @ctz(mask);
+        if (self.keys[bucket_abs_idx][slot] == key) return slot;
+        mask &= mask - 1;
         while (mask != 0) {
-            const slot = @ctz(mask);
-            if (self.keys[bucket_abs_idx][slot] == key) {
-                return slot;
-            }
+            const s = @ctz(mask);
+            if (self.keys[bucket_abs_idx][s] == key) return s;
             mask &= mask - 1;
         }
         return null;
