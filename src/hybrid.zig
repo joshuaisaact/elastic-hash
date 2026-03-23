@@ -552,14 +552,17 @@ pub const HybridElasticHash = struct {
 
     pub fn get(self: *const Self, key: u64) ?u64 {
         const h = hash(key);
-        const mask = self.tier0_bucket_mask;
-        const bucket0 = h & mask;
-
-        // Ultra-fast path: check if key is in slot 0 of first bucket (and slot is live)
-        if (self.keys[bucket0][0] == key and self.fingerprints[bucket0][0] != 0 and self.fingerprints[bucket0][0] != TOMBSTONE) return self.values[bucket0][0];
-
         const fp = fingerprint(h);
-        var probe: usize = 0;
+        const mask = self.tier0_bucket_mask;
+
+        // Check probe 0 (most lookups hit here)
+        const bucket0 = h & mask;
+        if (self.findKeyInBucket(bucket0, key, fp)) |slot| {
+            return self.values[bucket0][slot];
+        }
+
+        // Remaining probes
+        var probe: usize = 1;
         while (probe < MAX_PROBES) : (probe += 1) {
             const bucket_idx = (h +% @as(u64, probe)) & mask;
 
