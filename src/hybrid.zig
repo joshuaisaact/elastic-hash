@@ -577,20 +577,9 @@ pub const HybridElasticHash = struct {
         // Prefetch entries for probe 0 (random access, hardware prefetcher can't predict)
         @prefetch(@as([*]const u8, @ptrCast(&self.entries[bucket_base & mask])), .{ .rw = .read, .locality = 3 });
 
-        // Search tier 0
         for (0..MAX_PROBES) |probe| {
             const bucket_idx = (bucket_base +% @as(u64, probe)) & mask;
             if (self.findValueInBucket(bucket_idx, key, fp)) |val| return val;
-        }
-
-        // Search tier 1 if it exists (paper-faithful: ~2.7% of elements at 99% load)
-        if (self.num_tiers > 1) {
-            const t1_buckets = self.tier_bucket_counts[1];
-            const t1_start = self.tier_starts[1];
-            for (0..@min(MAX_PROBES, t1_buckets)) |probe| {
-                const rel_idx = bucketIndex(h, probe, t1_buckets);
-                if (self.findValueInBucket(t1_start + rel_idx, key, fp)) |val| return val;
-            }
         }
         return null;
     }
