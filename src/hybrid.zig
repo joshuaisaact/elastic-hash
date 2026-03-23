@@ -552,7 +552,7 @@ pub const HybridElasticHash = struct {
         }
     }
 
-    const MAX_LOOKUP_TIERS = 3;
+    const MAX_LOOKUP_TIERS = 2;
 
     pub fn get(self: *const Self, key: u64) ?u64 {
         const h = hash(key);
