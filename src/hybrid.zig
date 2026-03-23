@@ -399,8 +399,8 @@ pub const HybridElasticHash = struct {
     }
 
     inline fn fingerprint(h: u64) u8 {
-        // Use bits 32-39 for fingerprint (less correlated with bucket index from low bits)
-        const fp: u8 = @truncate(h >> 32);
+        // Use bits 24-31 - well mixed from multiply, independent from bucket index
+        const fp: u8 = @truncate(h >> 24);
         return if (fp == 0) 1 else if (fp == TOMBSTONE) 0xFE else fp;
     }
 
