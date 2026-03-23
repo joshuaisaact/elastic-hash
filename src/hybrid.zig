@@ -558,11 +558,15 @@ pub const HybridElasticHash = struct {
         const h = hash(key);
         const fp = fingerprint(h);
 
-        // Prefetch first probe location
+        // Prefetch first probe locations for tier 0 and tier 1
         if (self.num_tiers > 0) {
             const first_bucket = self.getBucketIdx(0, bucketIndex(h, 0, self.tier_bucket_counts[0]));
             @prefetch(&self.fingerprints[first_bucket], .{ .rw = .read, .locality = 3, .cache = .data });
             @prefetch(&self.keys[first_bucket], .{ .rw = .read, .locality = 3, .cache = .data });
+        }
+        if (self.num_tiers > 1) {
+            const first_bucket_t1 = self.getBucketIdx(1, bucketIndex(h, 0, self.tier_bucket_counts[1]));
+            @prefetch(&self.fingerprints[first_bucket_t1], .{ .rw = .read, .locality = 2, .cache = .data });
         }
 
         var j: usize = 1;
@@ -575,10 +579,17 @@ pub const HybridElasticHash = struct {
                 const rel_bucket_idx = bucketIndex(h, probe, num_buckets);
                 const abs_bucket_idx = self.getBucketIdx(tier, rel_bucket_idx);
 
-                // Prefetch next probe location
+                // Prefetch: next probe in same tier AND next tier at same probe depth
                 if (probe + 1 < num_buckets) {
                     const next_bucket = self.getBucketIdx(tier, bucketIndex(h, probe + 1, num_buckets));
                     @prefetch(&self.fingerprints[next_bucket], .{ .rw = .read, .locality = 2, .cache = .data });
+                }
+                if (tier + 1 < self.num_tiers) {
+                    const next_tier_buckets = self.tier_bucket_counts[tier + 1];
+                    if (probe < next_tier_buckets) {
+                        const next_tier_bucket = self.getBucketIdx(tier + 1, bucketIndex(h, probe, next_tier_buckets));
+                        @prefetch(&self.fingerprints[next_tier_bucket], .{ .rw = .read, .locality = 2, .cache = .data });
+                    }
                 }
 
                 if (self.findKeyInBucket(abs_bucket_idx, key, fp)) |slot| {
