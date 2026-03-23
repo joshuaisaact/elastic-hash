@@ -4,7 +4,7 @@
 const std = @import("std");
 const math = std.math;
 
-pub const BUCKET_SIZE = 32;
+pub const BUCKET_SIZE = 16;
 const MAX_PROBES = 8;
 const TOMBSTONE: u8 = 0xFF;
 
@@ -98,16 +98,14 @@ pub fn ComptimeHybridElasticHash(comptime capacity: usize) type {
             return mixed & (num_buckets - 1);
         }
 
-        const CtBucketMask = std.meta.Int(.unsigned, BUCKET_SIZE);
-
-        inline fn simdMatchFp(fps: *const [BUCKET_SIZE]u8, fp: u8) CtBucketMask {
+        inline fn simdMatchFp(fps: *const [BUCKET_SIZE]u8, fp: u8) u16 {
             const Vec = @Vector(BUCKET_SIZE, u8);
             const fp_vec: Vec = fps.*;
             const needle: Vec = @splat(fp);
             return @bitCast(fp_vec == needle);
         }
 
-        inline fn simdMatchEmpty(fps: *const [BUCKET_SIZE]u8) CtBucketMask {
+        inline fn simdMatchEmpty(fps: *const [BUCKET_SIZE]u8) u16 {
             const Vec = @Vector(BUCKET_SIZE, u8);
             const fp_vec: Vec = fps.*;
             const zeros: Vec = @splat(0);
@@ -289,10 +287,9 @@ pub fn ComptimeHybridElasticHash(comptime capacity: usize) type {
 }
 
 const FpVector = @Vector(BUCKET_SIZE, u8);
-const BucketMask = std.meta.Int(.unsigned, BUCKET_SIZE);
 
-/// SIMD fingerprint matching
-inline fn matchFingerprint(fps: *const [BUCKET_SIZE]u8, fp: u8) BucketMask {
+/// SIMD fingerprint matching on a 16-byte aligned chunk
+inline fn matchFingerprint(fps: *const [BUCKET_SIZE]u8, fp: u8) u16 {
     const fp_vec: FpVector = fps.*;
     const needle: FpVector = @splat(fp);
     const matches = fp_vec == needle;
@@ -300,7 +297,7 @@ inline fn matchFingerprint(fps: *const [BUCKET_SIZE]u8, fp: u8) BucketMask {
 }
 
 /// SIMD empty slot matching
-inline fn matchEmpty(fps: *const [BUCKET_SIZE]u8) BucketMask {
+inline fn matchEmpty(fps: *const [BUCKET_SIZE]u8) u16 {
     const fp_vec: FpVector = fps.*;
     const zeros: FpVector = @splat(0);
     const empties = fp_vec == zeros;
@@ -308,14 +305,14 @@ inline fn matchEmpty(fps: *const [BUCKET_SIZE]u8) BucketMask {
 }
 
 /// SIMD empty or tombstone matching (for insertion)
-inline fn matchEmptyOrTombstone(fps: *const [BUCKET_SIZE]u8) BucketMask {
+inline fn matchEmptyOrTombstone(fps: *const [BUCKET_SIZE]u8) u16 {
     const fp_vec: FpVector = fps.*;
     const zeros: FpVector = @splat(0);
     const tombstones: FpVector = @splat(TOMBSTONE);
     const empty_mask = fp_vec == zeros;
     const tombstone_mask = fp_vec == tombstones;
-    const empty_bits: BucketMask = @bitCast(empty_mask);
-    const tombstone_bits: BucketMask = @bitCast(tombstone_mask);
+    const empty_bits: u16 = @bitCast(empty_mask);
+    const tombstone_bits: u16 = @bitCast(tombstone_mask);
     return empty_bits | tombstone_bits;
 }
 
