@@ -560,9 +560,14 @@ pub const HybridElasticHash = struct {
         const fp = fingerprint(h);
         const search_tiers = @min(self.num_tiers, MAX_LOOKUP_TIERS);
 
+        // Bitmask of tiers we can skip (empty slot found = key can't be deeper)
+        var tier_done: u8 = 0;
+
         var j: usize = 1;
         while (j <= MAX_PROBES) : (j += 1) {
             for (0..search_tiers) |tier| {
+                if (tier_done & (@as(u8, 1) << @intCast(tier)) != 0) continue;
+
                 const probe = j - 1;
                 const num_buckets = self.tier_bucket_counts[tier];
                 if (probe >= num_buckets) continue;
@@ -570,10 +575,22 @@ pub const HybridElasticHash = struct {
                 const rel_bucket_idx = bucketIndex(h, probe, num_buckets);
                 const abs_bucket_idx = self.getBucketIdx(tier, rel_bucket_idx);
 
-                if (self.findKeyInBucket(abs_bucket_idx, key, fp)) |slot| {
-                    return self.values[abs_bucket_idx][slot];
+                var fp_mask = matchFingerprint(&self.fingerprints[abs_bucket_idx], fp);
+                while (fp_mask != 0) {
+                    const slot = @ctz(fp_mask);
+                    if (self.keys[abs_bucket_idx][slot] == key) {
+                        return self.values[abs_bucket_idx][slot];
+                    }
+                    fp_mask &= fp_mask - 1;
+                }
+
+                // If bucket has empty slots, key can't be deeper in this tier
+                if (matchEmpty(&self.fingerprints[abs_bucket_idx]) != 0) {
+                    tier_done |= @as(u8, 1) << @intCast(tier);
                 }
             }
+            // All tiers exhausted?
+            if (tier_done == (@as(u8, 1) << @intCast(search_tiers)) - 1) return null;
         }
         return null;
     }
