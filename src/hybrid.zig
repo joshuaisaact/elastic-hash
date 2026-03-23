@@ -328,6 +328,7 @@ pub const HybridElasticHash = struct {
     fingerprints: [][BUCKET_SIZE]u8,
     entries: [][BUCKET_SIZE]Entry,
     tier0_bucket_mask: usize,
+    tier0_bucket_shift: u6,
 
     // Insert/management fields
     tier_starts: []usize,
@@ -379,6 +380,7 @@ pub const HybridElasticHash = struct {
             .total_buckets = total_buckets,
             .tier0_bucket_count = tier_bucket_counts[0],
             .tier0_bucket_mask = tier_bucket_counts[0] - 1,
+            .tier0_bucket_shift = @as(u6, @intCast(64 - @ctz(tier_bucket_counts[0]))),
         };
     }
 
@@ -405,7 +407,10 @@ pub const HybridElasticHash = struct {
     }
 
     inline fn bucketIndex(h: u64, probe: usize, num_buckets: usize) usize {
-        return (h +% @as(u64, probe)) & (num_buckets - 1);
+        const bits: u7 = @intCast(@ctz(num_buckets));
+        const shift: u6 = @intCast(@min(64 - bits, 63));
+        const base = h >> shift;
+        return (base +% @as(u64, probe)) & (num_buckets - 1);
     }
 
     fn getEmptyFraction(self: *const Self, tier: usize) f64 {
@@ -566,9 +571,10 @@ pub const HybridElasticHash = struct {
         const h = hash(key);
         const fp = fingerprint(h);
         const mask = self.tier0_bucket_mask;
+        const bucket_base = h >> self.tier0_bucket_shift;
 
         // Check probe 0 (most lookups hit here)
-        const bucket0 = h & mask;
+        const bucket0 = bucket_base & mask;
         // Prefetch entries for probe 0 (random access, hardware prefetcher can't predict)
         @prefetch(@as([*]const u8, @ptrCast(&self.entries[bucket0])), .{ .rw = .read, .locality = 3 });
         if (self.findValueInBucket(bucket0, key, fp)) |val| return val;
@@ -576,7 +582,7 @@ pub const HybridElasticHash = struct {
         // Remaining probes
         var probe: usize = 1;
         while (probe < MAX_PROBES) : (probe += 1) {
-            const bucket_idx = (h +% @as(u64, probe)) & mask;
+            const bucket_idx = (bucket_base +% @as(u64, probe)) & mask;
             if (self.findValueInBucket(bucket_idx, key, fp)) |val| return val;
         }
         return null;
@@ -586,10 +592,11 @@ pub const HybridElasticHash = struct {
         const h = hash(key);
         const fp = fingerprint(h);
         const mask = self.tier0_bucket_mask;
+        const bucket_base = h >> self.tier0_bucket_shift;
 
         var probe: usize = 0;
         while (probe < MAX_PROBES) : (probe += 1) {
-            const bucket_idx = (h +% @as(u64, probe)) & mask;
+            const bucket_idx = (bucket_base +% @as(u64, probe)) & mask;
 
             if (self.findKeyInBucket(bucket_idx, key, fp)) |slot| {
                 self.fingerprints[bucket_idx][slot] = TOMBSTONE;
