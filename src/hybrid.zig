@@ -563,7 +563,7 @@ pub const HybridElasticHash = struct {
         }
     }
 
-    pub fn get(self: *const Self, key: u64) ?u64 {
+    pub inline fn get(self: *const Self, key: u64) ?u64 {
         const h = hash(key);
         const fp = fingerprint(h);
         const mask = self.tier0_bucket_mask;
