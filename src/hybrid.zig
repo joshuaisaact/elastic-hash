@@ -557,7 +557,6 @@ pub const HybridElasticHash = struct {
 
         // Check probe 0 (most lookups hit here)
         const bucket0 = h & mask;
-        @prefetch(&self.values[bucket0], .{ .rw = .read, .locality = 1, .cache = .data });
         if (self.findKeyInBucket(bucket0, key, fp)) |slot| {
             return self.values[bucket0][slot];
         }
