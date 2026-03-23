@@ -556,6 +556,10 @@ pub const HybridElasticHash = struct {
         const fp = fingerprint(h);
         const mask = self.tier0_bucket_mask;
 
+        // Prefetch keys for probe 0 (most likely to match)
+        const first_bucket = h & mask;
+        @prefetch(&self.keys[first_bucket], .{ .rw = .read, .locality = 1, .cache = .data });
+
         var probe: usize = 0;
         while (probe < MAX_PROBES) : (probe += 1) {
             const bucket_idx = (h +% @as(u64, probe)) & mask;
