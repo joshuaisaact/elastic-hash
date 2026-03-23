@@ -390,12 +390,10 @@ pub const HybridElasticHash = struct {
     }
 
     inline fn hash(key: u64) u64 {
-        var a = key ^ 0xa0761d6478bd642f;
-        var b = key ^ 0xe7037ed1a0b428db;
-        const r = @as(u128, a) *% @as(u128, b);
-        a = @truncate(r);
-        b = @truncate(r >> 64);
-        return a ^ b;
+        var h = key *% 0x9e3779b97f4a7c15;
+        h ^= h >> 32;
+        h *%= 0xbf58476d1ce4e5b9;
+        return h;
     }
 
     inline fn fingerprint(h: u64) u8 {
