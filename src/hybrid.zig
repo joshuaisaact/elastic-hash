@@ -558,27 +558,24 @@ pub const HybridElasticHash = struct {
         const h = hash(key);
         const fp = fingerprint(h);
 
-        // Prefetch first probe location
-        if (self.num_tiers > 0) {
-            const first_bucket = self.getBucketIdx(0, bucketIndex(h, 0, self.tier_bucket_counts[0]));
-            @prefetch(&self.fingerprints[first_bucket], .{ .rw = .read, .locality = 3, .cache = .data });
-            @prefetch(&self.keys[first_bucket], .{ .rw = .read, .locality = 3, .cache = .data });
-        }
+        // Tier-first search: search each tier completely before moving to next.
+        // This improves cache locality since each tier's buckets are contiguous.
+        for (0..self.num_tiers) |tier| {
+            const num_buckets = self.tier_bucket_counts[tier];
+            const tier_start = self.tier_starts[tier];
 
-        var j: usize = 1;
-        while (j <= MAX_PROBES) : (j += 1) {
-            for (0..self.num_tiers) |tier| {
-                const probe = j - 1;
-                const num_buckets = self.tier_bucket_counts[tier];
-                if (probe >= num_buckets) continue;
+            // Prefetch first bucket of this tier
+            const first_rel = bucketIndex(h, 0, num_buckets);
+            @prefetch(&self.fingerprints[tier_start + first_rel], .{ .rw = .read, .locality = 3, .cache = .data });
 
+            for (0..@min(num_buckets, MAX_PROBES)) |probe| {
                 const rel_bucket_idx = bucketIndex(h, probe, num_buckets);
-                const abs_bucket_idx = self.getBucketIdx(tier, rel_bucket_idx);
+                const abs_bucket_idx = tier_start + rel_bucket_idx;
 
-                // Prefetch next probe location
+                // Prefetch next probe in this tier
                 if (probe + 1 < num_buckets) {
-                    const next_bucket = self.getBucketIdx(tier, bucketIndex(h, probe + 1, num_buckets));
-                    @prefetch(&self.fingerprints[next_bucket], .{ .rw = .read, .locality = 2, .cache = .data });
+                    const next_rel = bucketIndex(h, probe + 1, num_buckets);
+                    @prefetch(&self.fingerprints[tier_start + next_rel], .{ .rw = .read, .locality = 2, .cache = .data });
                 }
 
                 if (self.findKeyInBucket(abs_bucket_idx, key, fp)) |slot| {
