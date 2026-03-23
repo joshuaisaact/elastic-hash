@@ -519,7 +519,7 @@ pub const HybridElasticHash = struct {
             const rel_bucket_idx = bucketIndex(h, probe, num_buckets);
             const abs_bucket_idx = self.getBucketIdx(tier, rel_bucket_idx);
 
-            if (self.findEmptyInBucket(abs_bucket_idx)) |slot| {
+            if (self.findEmptyOrTombstoneInBucket(abs_bucket_idx)) |slot| {
                 self.insertAt(abs_bucket_idx, slot, key, value, fp);
                 self.tier_slot_counts[tier] += 1;
                 self.count += 1;
@@ -537,7 +537,7 @@ pub const HybridElasticHash = struct {
             const rel_bucket_idx = bucketIndex(h, probe, num_buckets);
             const abs_bucket_idx = self.getBucketIdx(tier, rel_bucket_idx);
 
-            if (self.findEmptyInBucket(abs_bucket_idx)) |slot| {
+            if (self.findEmptyOrTombstoneInBucket(abs_bucket_idx)) |slot| {
                 self.insertAt(abs_bucket_idx, slot, key, value, fp);
                 self.tier_slot_counts[tier] += 1;
                 self.count += 1;
@@ -558,7 +558,7 @@ pub const HybridElasticHash = struct {
                 const rel_bucket_idx = bucketIndex(h, probe, num_buckets);
                 const abs_bucket_idx = self.getBucketIdx(tier, rel_bucket_idx);
 
-                if (self.findEmptyInBucket(abs_bucket_idx)) |slot| {
+                if (self.findEmptyOrTombstoneInBucket(abs_bucket_idx)) |slot| {
                     self.insertAt(abs_bucket_idx, slot, key, value, fp);
                     self.tier_slot_counts[tier] += 1;
                     self.count += 1;
