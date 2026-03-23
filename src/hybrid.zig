@@ -552,26 +552,19 @@ pub const HybridElasticHash = struct {
         }
     }
 
-    const MAX_LOOKUP_TIERS = 1;
-
     pub fn get(self: *const Self, key: u64) ?u64 {
         const h = hash(key);
         const fp = fingerprint(h);
-        const search_tiers = @min(self.num_tiers, MAX_LOOKUP_TIERS);
+        const num_buckets = self.tier_bucket_counts[0];
+        const tier_start = self.tier_starts[0];
 
-        var j: usize = 1;
-        while (j <= MAX_PROBES) : (j += 1) {
-            for (0..search_tiers) |tier| {
-                const probe = j - 1;
-                const num_buckets = self.tier_bucket_counts[tier];
-                if (probe >= num_buckets) continue;
+        var probe: usize = 0;
+        while (probe < MAX_PROBES) : (probe += 1) {
+            const rel_bucket_idx = bucketIndex(h, probe, num_buckets);
+            const abs_bucket_idx = tier_start + rel_bucket_idx;
 
-                const rel_bucket_idx = bucketIndex(h, probe, num_buckets);
-                const abs_bucket_idx = self.getBucketIdx(tier, rel_bucket_idx);
-
-                if (self.findKeyInBucket(abs_bucket_idx, key, fp)) |slot| {
-                    return self.values[abs_bucket_idx][slot];
-                }
+            if (self.findKeyInBucket(abs_bucket_idx, key, fp)) |slot| {
+                return self.values[abs_bucket_idx][slot];
             }
         }
         return null;
