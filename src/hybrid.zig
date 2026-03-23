@@ -571,12 +571,14 @@ pub const HybridElasticHash = struct {
         // Check probe 0 (most lookups hit here)
         const bucket0 = h & mask;
         if (self.findValueInBucket(bucket0, key, fp)) |val| return val;
+        if (matchEmpty(&self.fingerprints[bucket0]) != 0) return null;
 
-        // Remaining probes
+        // Remaining probes with early termination
         var probe: usize = 1;
         while (probe < MAX_PROBES) : (probe += 1) {
             const bucket_idx = (h +% @as(u64, probe)) & mask;
             if (self.findValueInBucket(bucket_idx, key, fp)) |val| return val;
+            if (matchEmpty(&self.fingerprints[bucket_idx]) != 0) return null;
         }
         return null;
     }
