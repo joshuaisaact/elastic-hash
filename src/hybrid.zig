@@ -337,7 +337,7 @@ pub const HybridElasticHash = struct {
     pub fn init(allocator: std.mem.Allocator, n: usize) !Self {
         const capacity = std.math.ceilPowerOfTwo(usize, n) catch n;
         // Large tier 0 so most elements stay local for fast lookup
-        const tier0_buckets = @max(capacity * 2 / BUCKET_SIZE, 1);
+        const tier0_buckets = @max(capacity / BUCKET_SIZE, 1);
         const num_tiers = @max(1, std.math.log2_int(usize, tier0_buckets) + 1);
 
         const tier_starts = try allocator.alloc(usize, num_tiers);
