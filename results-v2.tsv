@@ -33,3 +33,5 @@ fa8f1ec	1.032	1.687	1.042	baseline-v2	honest baseline with random keys (miss_gap
 4fe8fdb	1.035	1.558	1.068	revert	per-probe prefetch (wastes bandwidth on misses without early termination)
 5f0ba61	1.064	1.695	1.065	keep	restore xor-shift (helps random key distribution, +3% hit lookup)
 3b49a27	1.019	-	-	revert	xor-shift >> 28 (corrupts fingerprint bits)
+edf731b	1.012	-	-	revert	independent fingerprint multiply (adds critical path latency)
+a950f10	0.269	-	-	revert	7-bit H2-style fingerprint (64 unique values, catastrophic false positives)
