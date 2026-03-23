@@ -555,15 +555,13 @@ pub const HybridElasticHash = struct {
         const h = hash(key);
         const fp = fingerprint(h);
         const num_buckets = self.tier0_bucket_count;
-        const tier_start = self.tier0_start;
 
         var probe: usize = 0;
         while (probe < MAX_PROBES) : (probe += 1) {
-            const rel_bucket_idx = bucketIndex(h, probe, num_buckets);
-            const abs_bucket_idx = tier_start + rel_bucket_idx;
+            const bucket_idx = bucketIndex(h, probe, num_buckets);
 
-            if (self.findKeyInBucket(abs_bucket_idx, key, fp)) |slot| {
-                return self.values[abs_bucket_idx][slot];
+            if (self.findKeyInBucket(bucket_idx, key, fp)) |slot| {
+                return self.values[bucket_idx][slot];
             }
         }
         return null;
@@ -573,15 +571,13 @@ pub const HybridElasticHash = struct {
         const h = hash(key);
         const fp = fingerprint(h);
         const num_buckets = self.tier0_bucket_count;
-        const tier_start = self.tier0_start;
 
         var probe: usize = 0;
         while (probe < MAX_PROBES) : (probe += 1) {
-            const rel_bucket_idx = bucketIndex(h, probe, num_buckets);
-            const abs_bucket_idx = tier_start + rel_bucket_idx;
+            const bucket_idx = bucketIndex(h, probe, num_buckets);
 
-            if (self.findKeyInBucket(abs_bucket_idx, key, fp)) |slot| {
-                self.fingerprints[abs_bucket_idx][slot] = TOMBSTONE;
+            if (self.findKeyInBucket(bucket_idx, key, fp)) |slot| {
+                self.fingerprints[bucket_idx][slot] = TOMBSTONE;
                 self.count -= 1;
                 return true;
             }
