@@ -1,0 +1,35 @@
+commit	lookup_gap_99	lookup_gap_50	insert_gap_99	status	description
+baseline	0.789	0.737	1.001	baseline	initial measurement against abseil (reserve(fill))
+7807ffe	1.012	1.373	1.200	keep	interleave keys+values into entries array for cache locality
+236afac	1.187	0.990	1.398	keep	reduce MAX_PROBES 8 to 7
+0675665	0.869	0.650	1.274	revert	reduce MAX_PROBES 7 to 6 (too few probes, elements lost)
+7b36a0a	0.914	1.191	1.283	revert	two-round multiply hash (extra multiply too expensive)
+fb76b19	0.969	0.979	1.229	revert	fingerprint bits 56-63 (worse than 32-39)
+fce62d7	0.963	0.859	1.294	revert	batch threshold 0.08/92% (deeper probes cost more than fewer misses)
+93e4a08	0.829	0.834	1.229	revert	early termination on empty slots (I-cache pressure from inlined code)
+2cf2a29	1.120	1.143	1.395	keep	return value directly from findValueInBucket
+749a1e9	0.867	0.942	1.170	revert	inline get() (I-cache pressure from forced inlining)
+68cb2f5	0.972	0.846	1.471	revert	golden ratio hash constant (worse distribution at some sizes)
+46f1ae9	0.986	0.809	1.337	revert	minimal early termination (extra matchEmpty per probe not worth it at 99%)
+c5b0caa	0.843	1.114	1.244	revert	batch threshold 0.14/86% (more misses outweigh shallower probes)
+f97dad2	0.994	1.037	0.461	revert	always tier-0-first insert (insert 3x slower at 99% fill)
+8d00aa7	1.143	0.855	1.391	keep	prefetch entries for probe 0 (hides L3/DRAM latency for random access)
+ad3bf7c	0.894	0.480	1.328	revert	probe 1 prefetch (two prefetches compete, cache pollution at 2M)
+a355018+758f93f	1.449	1.183	1.966	keep	multiply-only hash + upper bits for bucket index
+dd25176	1.566	-	1.978	keep	merge probe 0 back into loop (prefetch before loop, smaller code)
+713b666	1.520	-	-	revert	MAX_PROBES=6 (higher variance from more misses)
+56102de	1.27	-	-	revert	branchless fingerprint @max/@min (code layout regression)
+eba4f60	1.528	-	-	revert	dual prefetch fp+entries (no improvement, keep code minimal)
+248089c	1.57	-	-	keep	for range instead of while in get() (cleaner, equivalent performance)
+d1db70b	1.62	-	-	revert	inline for unroll (neutral, prefer smaller code)
+c51c9e9	1.49	-	-	revert	batch threshold 0.10/90% (within noise of 0.12)
+269d9c4	1.547	-	-	revert	stride-3 probing (no improvement, extra multiply)
+56755e5	1.56	-	-	revert	two cache line prefetch (no improvement over single)
+df2c24a	1.50	-	-	revert	Murmur3 constant (equivalent, keep original)
+---	---	---	---	---	BENCHMARK V2: random keys, fair capacity, median of 10, miss test
+fa8f1ec	1.032	1.687	1.042	baseline-v2	honest baseline with random keys (miss_gap_99=0.499)
+573d1cf	0.875	1.382	0.788	revert	abseil-style 7-bit fps (2x false positives devastate high load)
+4c2dd16	1.028	1.572	1.043	revert	early termination matchEmpty (hurts 99% miss, helps low-load miss)
+4fe8fdb	1.035	1.558	1.068	revert	per-probe prefetch (wastes bandwidth on misses without early termination)
+5f0ba61	1.064	1.695	1.065	keep	restore xor-shift (helps random key distribution, +3% hit lookup)
+3b49a27	1.019	-	-	revert	xor-shift >> 28 (corrupts fingerprint bits)
