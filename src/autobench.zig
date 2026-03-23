@@ -81,6 +81,50 @@ fn benchOne(allocator: std.mem.Allocator, n: usize, fill: usize, load_pct: usize
         end = now();
         const miss_us = usElapsed(start, end);
 
+        // One-time tier/probe distribution print (BEFORE delete)
+        if (r == 0 and load_pct == 99 and n == 1_048_576) {
+            std.debug.print("--- Distribution at n={d}, fill={d} ---\n", .{ n, fill });
+            for (0..map.num_tiers) |t| {
+                if (map.tier_slot_counts[t] > 0)
+                    std.debug.print("  tier {d}: {d} elements in {d} buckets\n", .{ t, map.tier_slot_counts[t], map.tier_bucket_counts[t] });
+            }
+            // Count by findability
+            var found_get: usize = 0;
+            var found_probes: usize = 0;
+            for (0..fill) |i| {
+                if (map.get(keys[i]) != null) found_get += 1;
+                const r2 = map.getWithProbes(keys[i]);
+                if (r2.value != null) found_probes += 1;
+            }
+            std.debug.print("  get() finds:          {d}/{d} ({d:.1}%)\n", .{ found_get, fill, @as(f64, @floatFromInt(found_get)) / @as(f64, @floatFromInt(fill)) * 100 });
+            std.debug.print("  getWithProbes() finds: {d}/{d} ({d:.1}%)\n", .{ found_probes, fill, @as(f64, @floatFromInt(found_probes)) / @as(f64, @floatFromInt(fill)) * 100 });
+            // Trace first unfindable element
+            var trace_ks: u64 = KEY_SEED;
+            for (0..fill) |ii| {
+                const k = splitmix64(&trace_ks);
+                const r2 = map.getWithProbes(k);
+                if (r2.value == null) {
+                    const hh = k *% 0x517cc1b727220a95;
+                    const hx = hh ^ (hh >> 32);
+                    const fpp: u8 = @truncate(hx >> 32);
+                    const expected_fp = if (fpp == 0) @as(u8, 1) else if (fpp == 0xFF) @as(u8, 0xFE) else fpp;
+                    std.debug.print("  MISS: i={d} key={x} hash={x} fp={d}\n", .{ ii, k, hx, expected_fp });
+                    // Brute-force scan to find where this key is stored
+                    var scan_found = false;
+                    for (0..map.total_buckets) |b| {
+                        for (0..16) |s| {
+                            if (map.entries[b][s].key == k) {
+                                std.debug.print("  FOUND at bucket={d} slot={d} stored_fp={d}\n\n", .{ b, s, map.fingerprints[b][s] });
+                                scan_found = true;
+                            }
+                        }
+                    }
+                    if (!scan_found) std.debug.print("  NOT IN TABLE AT ALL\n\n", .{});
+                    break;
+                }
+            }
+        }
+
         start = now();
         for (0..fill / 2) |i| {
             std.mem.doNotOptimizeAway(map.remove(keys[i]));
