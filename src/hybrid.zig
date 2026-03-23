@@ -400,8 +400,9 @@ pub const HybridElasticHash = struct {
     }
 
     inline fn fingerprint(h: u64) u8 {
-        // Use 7 bits + 1 to get range 1-128, avoiding 0 (empty) and 0xFF (tombstone)
-        return @as(u8, @truncate(h >> 57)) + 1;
+        const fp: u8 = @truncate(h >> 56);
+        // 0 = empty, 0xFF = tombstone, so valid range is 1-254
+        return if (fp == 0) 1 else if (fp == TOMBSTONE) 0xFE else fp;
     }
 
     inline fn bucketIndex(h: u64, probe: usize, num_buckets: usize) usize {
