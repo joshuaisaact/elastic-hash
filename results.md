@@ -326,3 +326,54 @@ After:
 6. **Hash bit selection affects false positive rate.** Using different bits for the fingerprint (32-39) vs bucket index (0-15) reduces correlation, lowering the false positive rate and reducing unnecessary key comparisons.
 
 7. **One fast instruction beats two.** The single-multiply hash (`key * const; h ^= h >> 32`) is faster than the wyhash 128-bit multiply despite slightly worse distribution. At this scale, instruction count on the critical path dominates.
+
+---
+
+## vs Google's abseil `flat_hash_map`
+
+All comparisons above are against Zig's `std.HashMap`. We also ran a rigorous comparison against Google's `absl::flat_hash_map` (the original SwissTable implementation), using the correct APIs (`emplace()` for insert, `find()` for lookup, `erase(iterator)` for delete), with hashtablez sampling disabled, `-O3 -march=native -DNDEBUG`, 2 warmup + 10 measured runs.
+
+**Important note on methodology**: An earlier, flawed benchmark used `operator[]` for both insert and lookup. `operator[]` is find-or-default-construct-or-assign, not a pure insert or lookup. It heavily penalizes abseil and produced misleading results. The numbers below use the correct APIs.
+
+### n=1,048,576 at 99% load (us, 10 runs, lower is better)
+
+| Operation | Elastic Hash | Google Abseil | Zig std.HashMap | Notes |
+|-----------|-------------|---------------|-----------------|-------|
+| **Lookup** | 8,568-9,010 | 8,211-8,857 | ~43,000 | Tied (overlapping stddevs) |
+| **Insert** | 16,778-16,924 | 15,685 | ~52,000 | Abseil ~7% faster |
+| **Delete** | **2,102-2,190** | 8,196-8,383 | ~4,000 | **Elastic 3.9x faster** |
+
+### n=2,097,152 at 99% load
+
+| Operation | Elastic Hash | Google Abseil | Notes |
+|-----------|-------------|---------------|-------|
+| **Lookup** | 28,146-28,325 | **19,398-20,453** | Abseil 1.4x faster |
+| **Insert** | 41,909-42,050 | **34,432-35,741** | Abseil ~1.2x faster |
+| **Delete** | **6,856-7,691** | 18,814-20,014 | Elastic 2.7x faster |
+
+### n=1,048,576 lookup across load factors
+
+| Load % | Elastic (us) | Abseil (us) | Winner |
+|--------|-------------|-------------|--------|
+| 10% | 575-594 | 222-233 | Abseil 2.5x faster |
+| 25% | 1,611-1,645 | 610-620 | Abseil 2.6x faster |
+| 50% | 3,133-3,413 | 2,307-2,752 | Abseil ~1.3x faster |
+| 75% | 5,283-7,353 | 3,200-3,733 | Abseil ~1.6x faster |
+| 90% | 6,458-7,831 | 7,190-7,781 | Approximately tied |
+| 99% | 8,556-9,389 | 8,129-8,197 | Approximately tied |
+
+### Takeaway
+
+Elastic hash is not faster than Google's abseil on lookup or insert. Where it genuinely wins:
+
+- **Delete**: 3-4x faster at all sizes and load factors, because tombstone marking is O(1) vs abseil's rehash-on-delete.
+- **Lookup at extreme load (99%)**: Roughly tied with abseil, while being 5x faster than Zig's std.HashMap. The tiered architecture degrades more gracefully than a flat table at near-full capacity.
+- **Insert at extreme load (90-99%)**: Roughly tied. The batch insertion algorithm handles near-full tables better than abseil's probe-and-grow.
+
+Where abseil wins:
+
+- **Lookup at low-to-moderate load**: 1.3-2.6x faster. Abseil's flat memory layout with SIMD probing has better cache behavior when the table is sparse. Our tier management overhead doesn't pay off when probe depth is already low.
+- **Insert at low-to-moderate load**: Abseil's direct slot placement is simpler and faster when there's plenty of room.
+- **Large tables (2M+)**: Our fingerprint array exceeds L2 cache, while abseil's layout stays more cache-friendly at scale.
+
+The elastic hash occupies a niche: workloads with high load factors, frequent deletes, and tolerance for higher memory overhead. It's not a general-purpose replacement for SwissTable.
