@@ -401,9 +401,10 @@ pub const HybridElasticHash = struct {
         return h ^ (h >> 32);
     }
 
-    inline fn fingerprint(h: u64) u8 {
-        // Use bits 32-39 for fingerprint (less correlated with bucket index from low bits)
-        const fp: u8 = @truncate(h >> 32);
+    inline fn fingerprint2(key: u64) u8 {
+        // Independent fingerprint from a second multiply (runs in parallel on superscalar)
+        const h2 = key *% 0x2545F4914F6CDD1D;
+        const fp: u8 = @truncate(h2 >> 56);
         return if (fp == 0) 1 else if (fp == TOMBSTONE) 0xFE else fp;
     }
 
@@ -475,7 +476,7 @@ pub const HybridElasticHash = struct {
 
     pub fn insert(self: *Self, key: u64, value: u64) void {
         const h = hash(key);
-        const fp = fingerprint(h);
+        const fp = fingerprint2(key);
         const i = self.current_batch;
 
         if (i == 0) {
@@ -570,7 +571,7 @@ pub const HybridElasticHash = struct {
 
     pub fn get(self: *const Self, key: u64) ?u64 {
         const h = hash(key);
-        const fp = fingerprint(h);
+        const fp = fingerprint2(key);
         const mask = self.tier0_bucket_mask;
         const bucket_base = h >> self.tier0_bucket_shift;
 
@@ -586,7 +587,7 @@ pub const HybridElasticHash = struct {
 
     pub fn remove(self: *Self, key: u64) bool {
         const h = hash(key);
-        const fp = fingerprint(h);
+        const fp = fingerprint2(key);
         const mask = self.tier0_bucket_mask;
         const bucket_base = h >> self.tier0_bucket_shift;
 
@@ -605,7 +606,7 @@ pub const HybridElasticHash = struct {
 
     pub fn getWithProbes(self: *const Self, key: u64) struct { value: ?u64, bucket_probes: usize } {
         const h = hash(key);
-        const fp = fingerprint(h);
+        const fp = fingerprint2(key);
         var bucket_probes: usize = 0;
 
         var j: usize = 1;
