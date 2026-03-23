@@ -558,13 +558,6 @@ pub const HybridElasticHash = struct {
         const h = hash(key);
         const fp = fingerprint(h);
 
-        // Prefetch first probe location
-        if (self.num_tiers > 0) {
-            const first_bucket = self.getBucketIdx(0, bucketIndex(h, 0, self.tier_bucket_counts[0]));
-            @prefetch(&self.fingerprints[first_bucket], .{ .rw = .read, .locality = 3, .cache = .data });
-            @prefetch(&self.keys[first_bucket], .{ .rw = .read, .locality = 3, .cache = .data });
-        }
-
         var j: usize = 1;
         while (j <= MAX_PROBES) : (j += 1) {
             for (0..self.num_tiers) |tier| {
@@ -574,12 +567,6 @@ pub const HybridElasticHash = struct {
 
                 const rel_bucket_idx = bucketIndex(h, probe, num_buckets);
                 const abs_bucket_idx = self.getBucketIdx(tier, rel_bucket_idx);
-
-                // Prefetch next probe location
-                if (probe + 1 < num_buckets) {
-                    const next_bucket = self.getBucketIdx(tier, bucketIndex(h, probe + 1, num_buckets));
-                    @prefetch(&self.fingerprints[next_bucket], .{ .rw = .read, .locality = 2, .cache = .data });
-                }
 
                 if (self.findKeyInBucket(abs_bucket_idx, key, fp)) |slot| {
                     return self.values[abs_bucket_idx][slot];
