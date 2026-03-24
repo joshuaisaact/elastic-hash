@@ -592,15 +592,15 @@ pub const HybridElasticHash = struct {
         return self.get_overflow_fn(self, h, key, fp);
     }
 
-    /// Default overflow handler: searches tier 1+ for elements not in tier 0.
+    /// Overflow handler: searches tier 1 for elements not in tier 0.
+    /// At 99% load, 100% of elements are in tier 0 or tier 1.
     fn defaultGetOverflow(self: *const Self, h: u64, key: u64, fp: u8) ?u64 {
-        for (1..self.num_tiers) |tier| {
-            const num_buckets = self.tier_bucket_counts[tier];
-            const tier_start = self.tier_starts[tier];
-            for (0..@min(MAX_PROBES, num_buckets)) |probe| {
-                const rel_idx = bucketIndex(h, probe, num_buckets);
-                if (self.findValueInBucket(tier_start + rel_idx, key, fp)) |val| return val;
-            }
+        if (self.num_tiers <= 1) return null;
+        const num_buckets = self.tier_bucket_counts[1];
+        const tier_start = self.tier_starts[1];
+        for (0..@min(MAX_PROBES, num_buckets)) |probe| {
+            const rel_idx = bucketIndex(h, probe, num_buckets);
+            if (self.findValueInBucket(tier_start + rel_idx, key, fp)) |val| return val;
         }
         return null;
     }
