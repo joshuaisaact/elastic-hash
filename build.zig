@@ -96,4 +96,17 @@ pub fn build(b: *std.Build) void {
     const run_autobench_strings = b.addRunArtifact(autobench_strings);
     const autobench_strings_step = b.step("autobench-strings", "Run string key benchmarks");
     autobench_strings_step.dependOn(&run_autobench_strings.step);
+
+    // Shuffled verification benchmark
+    const autobench_verify = b.addExecutable(.{
+        .name = "autobench-strings-verify",
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("src/autobench-strings-verify.zig"),
+            .target = target,
+            .optimize = optimize,
+        }),
+    });
+    const run_autobench_verify = b.addRunArtifact(autobench_verify);
+    const autobench_verify_step = b.step("autobench-strings-verify", "Run shuffled verification");
+    autobench_verify_step.dependOn(&run_autobench_verify.step);
 }

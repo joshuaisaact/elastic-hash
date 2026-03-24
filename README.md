@@ -35,7 +35,7 @@ Benchmarked against `absl::flat_hash_map` (the original SwissTable) with u64 key
 
 ### Where elastic hash wins
 
-**Hit lookups at 500K-2M elements, 10-75% load.** The tiered architecture keeps hot fingerprint metadata (1MB for tier 0) in L2 cache, while abseil's flat control byte array (2MB after reserve) spills to L3. This gives a ~15-20% advantage on random-access hit lookups in the sweet spot.
+**Hit lookups at all tested sizes (16K-4M), 10-90% load.** On M4, elastic hash beats abseil, Rust hashbrown+ahash, and Go swiss.Map at every table size. The advantage peaks at 256K-1M (2-3x vs abseil) but holds even at 16K (1.45x) and 4M (1.91x).
 
 **Mixed read/write workloads at 500K.** Up to 50% faster when the access pattern includes inserts and deletes alongside lookups.
 
@@ -44,10 +44,6 @@ Benchmarked against `absl::flat_hash_map` (the original SwissTable) with u64 key
 ### Where abseil wins
 
 **Miss lookups: 2-3x faster.** Abseil's early termination on empty control byte groups stops miss probing after 1-2 groups. Our tiered structure scans 7 probes in tier 0 + 7 in tier 1 before concluding a miss.
-
-**Small tables (<100K).** Everything fits in L1, our tier overhead costs more than it saves.
-
-**Large tables (>4M).** Neither side's metadata fits in L2; abseil's flat layout has slightly less overhead.
 
 **High load (99%).** Tier 0 is nearly full, probe depths increase, and the metadata density advantage disappears.
 
@@ -63,7 +59,8 @@ The advantage is not cache-level-specific. On M4, both fingerprint arrays fit in
 ### Caveats
 
 - Tested with u64 and 16-byte string keys.
-- Compiled with g++ (abseil) vs Zig/LLVM (elastic hash). Different compiler backends may generate different code quality.
+- Compiled with g++ / Apple Clang (abseil) vs Zig/LLVM (elastic hash). Different compiler backends may generate different code quality.
+- Miss lookup performance remains a weakness -- workloads dominated by key-not-found queries will favor abseil.
 
 ## Architecture
 

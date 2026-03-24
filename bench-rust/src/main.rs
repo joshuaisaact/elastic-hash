@@ -115,40 +115,41 @@ fn bench_with_siphash(n: usize, fill: usize, load_pct: usize,
     );
 }
 
+fn gen_keys(fill: usize) -> (Vec<[u8; 16]>, Vec<[u8; 16]>, Vec<usize>) {
+    let mut keys: Vec<[u8; 16]> = vec![[0u8; 16]; fill];
+    let mut miss_keys: Vec<[u8; 16]> = vec![[0u8; 16]; fill];
+    let mut ks = KEY_SEED;
+    let mut ms = MISS_SEED;
+    for i in 0..fill {
+        u64_to_hex(splitmix64(&mut ks), &mut keys[i]);
+        u64_to_hex(splitmix64(&mut ms), &mut miss_keys[i]);
+    }
+    let mut order: Vec<usize> = (0..fill).collect();
+    let mut rng = 42u64;
+    for i in (1..fill).rev() {
+        let j = (splitmix64(&mut rng) as usize) % (i + 1);
+        order.swap(i, j);
+    }
+    (keys, miss_keys, order)
+}
+
 fn main() {
     eprintln!("=== Rust hashbrown benchmark (ahash + siphash) ===");
 
-    let mut ks_verify = KEY_SEED;
-    for _ in 0..3 {
-        let v = splitmix64(&mut ks_verify);
-        let mut buf = [0u8; 16];
-        u64_to_hex(v, &mut buf);
-        eprint!("{} ", std::str::from_utf8(&buf).unwrap());
-    }
-    eprintln!();
-
+    // Load factor sweep at 1M
     for pct in [10, 25, 50, 75, 90, 99] {
         let n = 1_048_576;
         let fill = n * pct / 100;
-
-        let mut keys: Vec<[u8; 16]> = vec![[0u8; 16]; fill];
-        let mut miss_keys: Vec<[u8; 16]> = vec![[0u8; 16]; fill];
-        let mut ks = KEY_SEED;
-        let mut ms = MISS_SEED;
-        for i in 0..fill {
-            u64_to_hex(splitmix64(&mut ks), &mut keys[i]);
-            u64_to_hex(splitmix64(&mut ms), &mut miss_keys[i]);
-        }
-
-        let mut order: Vec<usize> = (0..fill).collect();
-        let mut rng = 42u64;
-        for i in (1..fill).rev() {
-            let j = (splitmix64(&mut rng) as usize) % (i + 1);
-            order.swap(i, j);
-        }
-
+        let (keys, miss_keys, order) = gen_keys(fill);
         bench_with_ahash(n, fill, pct, &keys, &miss_keys, &order);
         bench_with_siphash(n, fill, pct, &keys, &order);
+    }
+
+    // Size sweep at 50% load
+    for n in [16_384, 65_536, 262_144, 1_048_576, 4_194_304] {
+        let fill = n / 2;
+        let (keys, miss_keys, order) = gen_keys(fill);
+        bench_with_ahash(n, fill, 50, &keys, &miss_keys, &order);
     }
 
     eprintln!("DONE");

@@ -213,12 +213,22 @@ func main() {
 	}
 	fmt.Fprintln(os.Stderr)
 
+	// Load factor sweep at 1M
 	pcts := []int{10, 25, 50, 75, 90, 99}
 	for _, pct := range pcts {
 		benchSwiss(1_048_576, 1_048_576*pct/100, pct)
 	}
 	for _, pct := range pcts {
 		benchBuiltin(1_048_576, 1_048_576*pct/100, pct)
+	}
+
+	// Size sweep at 50% load
+	sizes := []int{16_384, 65_536, 262_144, 1_048_576, 4_194_304}
+	for _, s := range sizes {
+		benchSwiss(s, s/2, 50)
+	}
+	for _, s := range sizes {
+		benchBuiltin(s, s/2, 50)
 	}
 
 	fmt.Fprintln(os.Stderr, "DONE")

@@ -45,6 +45,43 @@ The advantage grew from 1.74x to 2.59x. The tiered metadata advantage is not abo
 
 Note: unshuffled results show a much smaller gap vs abseil (1.07x at 50%) because sequential access doesn't stress cache line efficiency. The shuffled test is the realistic one.
 
+### M4 size sweep at 50% load, shuffled hit lookup (us)
+
+Clean sequential run -- no concurrent benchmarks to cause contention.
+
+| Size | Elastic (Zig) | Abseil (C++) | Rust+ahash | Go swiss | Go builtin |
+|------|--------------|-------------|-----------|---------|-----------|
+| 16K | **33** | 48 | 40 | 61 | 72 |
+| 64K | **159** | 207 | 200 | 293 | 327 |
+| 256K | **684** | 1,507 | 2,073 | 2,423 | 4,443 |
+| 1M | **9,488** | 22,261 | 17,182 | 28,720 | 33,749 |
+| 4M | **59,234** | 113,400 | 105,560 | 137,990 | 154,052 |
+
+| Size | vs Abseil | vs Rust+ahash | vs Go swiss |
+|------|----------|--------------|------------|
+| 16K | **1.45x** | 1.21x | 1.85x |
+| 64K | **1.30x** | 1.26x | 1.84x |
+| 256K | **2.20x** | **3.03x** | **3.54x** |
+| 1M | **2.35x** | **1.81x** | **3.03x** |
+| 4M | **1.91x** | **1.78x** | **2.33x** |
+
+Elastic hash wins at every table size from 16K to 4M. The x86 finding that small tables (<100K) favored abseil does not hold on M4 -- elastic hash is faster even at 16K.
+
+### M4 load factor sweep at 50%, shuffled (us, elastic vs abseil)
+
+Consistent across 3 runs (values from the clean sequential run):
+
+| Load | Elastic | Abseil | Ratio |
+|------|---------|--------|-------|
+| 10% | 553 | 3,232 | **5.85x** |
+| 25% | 2,109 | 18,085 | **8.58x** |
+| 50% | 9,284 | 21,473 | **2.31x** |
+| 75% | 17,383 | 37,120 | **2.14x** |
+| 90% | 24,042 | 45,323 | **1.89x** |
+| 99% | 55,491 | 50,232 | **0.91x** |
+
+At 99% load abseil pulls ahead, consistent with x86 results. At every other load factor elastic hash wins convincingly.
+
 ---
 
 ## x86 results (Linux, AMD/Intel ~512KB L2)

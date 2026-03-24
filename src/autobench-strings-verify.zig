@@ -78,6 +78,10 @@ fn bench(allocator: std.mem.Allocator, n: usize, fill: usize, load_pct: usize) v
 
 pub fn main() !void {
     const allocator = std.heap.page_allocator;
+    // Load factor sweep at 1M
     const pcts = [_]usize{ 10, 25, 50, 75, 90, 99 };
     for (pcts) |pct| bench(allocator, 1_048_576, 1_048_576 * pct / 100, pct);
+    // Size sweep at 50% load
+    const sizes = [_]usize{ 16_384, 65_536, 262_144, 1_048_576, 4_194_304 };
+    for (sizes) |s| bench(allocator, s, s / 2, 50);
 }

@@ -76,7 +76,11 @@ static void bench(size_t n, size_t fill, int load_pct) {
 }
 
 int main() {
+    // Load factor sweep at 1M
     constexpr int pcts[] = {10, 25, 50, 75, 90, 99};
     for (int pct : pcts) bench(1048576, 1048576 * pct / 100, pct);
+    // Size sweep at 50% load
+    constexpr size_t sizes[] = {16384, 65536, 262144, 1048576, 4194304};
+    for (size_t s : sizes) bench(s, s / 2, 50);
     return 0;
 }
