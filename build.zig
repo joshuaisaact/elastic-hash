@@ -109,4 +109,69 @@ pub fn build(b: *std.Build) void {
     const run_autobench_verify = b.addRunArtifact(autobench_verify);
     const autobench_verify_step = b.step("autobench-strings-verify", "Run shuffled verification");
     autobench_verify_step.dependOn(&run_autobench_verify.step);
+
+    // Hit + miss benchmark with shuffled access
+    const autobench_miss = b.addExecutable(.{
+        .name = "autobench-miss",
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("src/autobench-miss.zig"),
+            .target = target,
+            .optimize = optimize,
+        }),
+    });
+    const run_autobench_miss = b.addRunArtifact(autobench_miss);
+    const autobench_miss_step = b.step("autobench-miss", "Run hit + miss shuffled benchmark");
+    autobench_miss_step.dependOn(&run_autobench_miss.step);
+
+    // Tombstone churn test
+    const autobench_churn = b.addExecutable(.{
+        .name = "autobench-churn",
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("src/autobench-churn.zig"),
+            .target = target,
+            .optimize = optimize,
+        }),
+    });
+    const run_autobench_churn = b.addRunArtifact(autobench_churn);
+    const autobench_churn_step = b.step("autobench-churn", "Run tombstone churn test");
+    autobench_churn_step.dependOn(&run_autobench_churn.step);
+
+    // Mixed workload benchmark
+    const autobench_mixed = b.addExecutable(.{
+        .name = "autobench-mixed",
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("src/autobench-mixed.zig"),
+            .target = target,
+            .optimize = optimize,
+        }),
+    });
+    const run_autobench_mixed = b.addRunArtifact(autobench_mixed);
+    const autobench_mixed_step = b.step("autobench-mixed", "Run mixed workload benchmark");
+    autobench_mixed_step.dependOn(&run_autobench_mixed.step);
+
+    // Memory overhead
+    const autobench_memory = b.addExecutable(.{
+        .name = "autobench-memory",
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("src/autobench-memory.zig"),
+            .target = target,
+            .optimize = optimize,
+        }),
+    });
+    const run_autobench_memory = b.addRunArtifact(autobench_memory);
+    const autobench_memory_step = b.step("autobench-memory", "Report memory overhead");
+    autobench_memory_step.dependOn(&run_autobench_memory.step);
+
+    // Variable key length
+    const autobench_keylen = b.addExecutable(.{
+        .name = "autobench-keylen",
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("src/autobench-keylen.zig"),
+            .target = target,
+            .optimize = optimize,
+        }),
+    });
+    const run_autobench_keylen = b.addRunArtifact(autobench_keylen);
+    const autobench_keylen_step = b.step("autobench-keylen", "Run variable key length benchmark");
+    autobench_keylen_step.dependOn(&run_autobench_keylen.step);
 }
