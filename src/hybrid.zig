@@ -324,11 +324,14 @@ const Entry = extern struct {
 pub const HybridElasticHash = struct {
     const Self = @This();
 
+    const GetOverflowFn = *const fn (*const Self, u64, u64, u8) ?u64;
+
     // Hot path fields first (get/remove) - fit in first cache line
     fingerprints: [][BUCKET_SIZE]u8,
     entries: [][BUCKET_SIZE]Entry,
     tier0_bucket_mask: usize,
     tier0_bucket_shift: u6,
+    get_overflow_fn: GetOverflowFn,
 
     // Insert/management fields
     tier_starts: []usize,
@@ -381,6 +384,7 @@ pub const HybridElasticHash = struct {
             .tier0_bucket_count = tier_bucket_counts[0],
             .tier0_bucket_mask = tier_bucket_counts[0] - 1,
             .tier0_bucket_shift = @as(u6, @intCast(64 - @ctz(tier_bucket_counts[0]))),
+            .get_overflow_fn = &defaultGetOverflow,
         };
     }
 
@@ -583,12 +587,13 @@ pub const HybridElasticHash = struct {
             if (self.findValueInBucket(bucket_idx, key, fp)) |val| return val;
         }
 
-        // Tier 1+: cold path for remaining ~3% (paper-faithful multi-tier search)
-        return self.getOtherTiers(h, key, fp);
+        // Tier 1+: cold path via opaque function pointer (prevents LLVM from
+        // seeing the callee when optimizing get(), avoiding codegen cascade)
+        return self.get_overflow_fn(self, h, key, fp);
     }
 
-    noinline fn getOtherTiers(self: *const Self, h: u64, key: u64, fp: u8) ?u64 {
-        @branchHint(.cold);
+    /// Default overflow handler: searches tier 1+ for elements not in tier 0.
+    fn defaultGetOverflow(self: *const Self, h: u64, key: u64, fp: u8) ?u64 {
         for (1..self.num_tiers) |tier| {
             const num_buckets = self.tier_bucket_counts[tier];
             const tier_start = self.tier_starts[tier];
