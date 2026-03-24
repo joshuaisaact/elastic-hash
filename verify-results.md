@@ -63,7 +63,9 @@ Abseil's hash is only 16% slower. This contributes ~0.1ns per probe to our advan
 
 Both use -O3 equivalent. The different compiler backends (GCC vs LLVM) could generate different code quality. This is a limitation we can't easily resolve without installing clang.
 
-**Verdict: Unknown. A clang-compiled abseil might perform differently.**
+**Update: clang 22.1.1 now tested.** GCC and clang produce nearly identical abseil lookup performance at 10-90% load (within 3%). At 99% load, GCC is actually 10% faster than clang. The compiler difference is NOT giving us an unfair advantage -- GCC-compiled abseil is the harder target.
+
+**Verdict: Compiler is not a confound. GCC abseil is at least as fast as clang abseil.**
 
 ## Check 6: Realistic workloads
 
