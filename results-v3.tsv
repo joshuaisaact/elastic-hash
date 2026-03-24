@@ -1,2 +1,5 @@
 commit	find_rate	lookup_gap_99	miss_gap_99	insert_gap_99	status	description
 baseline	97.3	1.012	0.529	1.016	baseline	tier-0-only get(), 27936 elements in tier 1 invisible
+noinline	100	0.970	0.062	0.761	revert	noinline getOtherTiers (insert cascade, miss catastrophic from all-tier scan)
+b2448b0	100	0.970	0.062	0.917	keep	opaque function pointer overflow (100% find, 4% hit cost, 10% insert cost)
+906ae65	100	0.957	0.283	0.909	keep	limit overflow to tier 1 only (miss 0.062 -> 0.283)
