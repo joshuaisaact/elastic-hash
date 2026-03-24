@@ -1,3 +1,8 @@
 .zig-cache
+zig-out
 .claude
 NOTES.md
+bench.log
+bench-abseil
+abseil-v2.log
+elastic-v2.log
