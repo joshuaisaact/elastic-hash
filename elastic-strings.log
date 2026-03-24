@@ -1,14 +1,14 @@
 
 === String-key Benchmark (median of 10, 2 warmup, 16-byte keys) ===
 
-RESULT	n=16384	load=99	insert_us=225	lookup_us=97	delete_us=27	miss_us=209
-RESULT	n=65536	load=99	insert_us=989	lookup_us=471	delete_us=133	miss_us=959
-RESULT	n=262144	load=99	insert_us=4967	lookup_us=2242	delete_us=708	miss_us=5002
-RESULT	n=1048576	load=99	insert_us=20786	lookup_us=16605	delete_us=6300	miss_us=38367
-RESULT	n=1048576	load=10	insert_us=5358	lookup_us=808	delete_us=448	miss_us=1424
-RESULT	n=1048576	load=25	insert_us=6732	lookup_us=2841	delete_us=1277	miss_us=4811
-RESULT	n=1048576	load=50	insert_us=8718	lookup_us=5774	delete_us=2614	miss_us=12852
-RESULT	n=1048576	load=75	insert_us=10852	lookup_us=9907	delete_us=4429	miss_us=24515
-RESULT	n=1048576	load=90	insert_us=14719	lookup_us=13556	delete_us=5341	miss_us=32882
+RESULT	n=16384	load=99	insert_us=228	lookup_us=99	delete_us=23	miss_us=199
+RESULT	n=65536	load=99	insert_us=909	lookup_us=410	delete_us=116	miss_us=889
+RESULT	n=262144	load=99	insert_us=4161	lookup_us=2020	delete_us=649	miss_us=4464
+RESULT	n=1048576	load=99	insert_us=20181	lookup_us=16750	delete_us=6889	miss_us=38205
+RESULT	n=1048576	load=10	insert_us=5088	lookup_us=955	delete_us=497	miss_us=1402
+RESULT	n=1048576	load=25	insert_us=6345	lookup_us=2411	delete_us=1127	miss_us=4400
+RESULT	n=1048576	load=50	insert_us=8153	lookup_us=5750	delete_us=2492	miss_us=12343
+RESULT	n=1048576	load=75	insert_us=10149	lookup_us=9762	delete_us=4754	miss_us=24061
+RESULT	n=1048576	load=90	insert_us=13681	lookup_us=13179	delete_us=5715	miss_us=32538
 
 DONE
