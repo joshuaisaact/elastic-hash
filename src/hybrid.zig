@@ -593,14 +593,17 @@ pub const HybridElasticHash = struct {
     }
 
     /// Overflow handler: searches tier 1 for elements not in tier 0.
-    /// At 99% load, 100% of elements are in tier 0 or tier 1.
+    /// Uses early termination on empty slots — safe because with 100% find rate,
+    /// reaching this function means the key is either in tier 1 or doesn't exist.
     fn defaultGetOverflow(self: *const Self, h: u64, key: u64, fp: u8) ?u64 {
         if (self.num_tiers <= 1) return null;
         const num_buckets = self.tier_bucket_counts[1];
         const tier_start = self.tier_starts[1];
         for (0..@min(MAX_PROBES, num_buckets)) |probe| {
-            const rel_idx = bucketIndex(h, probe, num_buckets);
-            if (self.findValueInBucket(tier_start + rel_idx, key, fp)) |val| return val;
+            const abs_idx = tier_start + bucketIndex(h, probe, num_buckets);
+            if (self.findValueInBucket(abs_idx, key, fp)) |val| return val;
+            // Early termination: empty slot means key can't be deeper in this tier
+            if (matchEmpty(&self.fingerprints[abs_idx]) != 0) return null;
         }
         return null;
     }
