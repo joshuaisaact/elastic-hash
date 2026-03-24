@@ -59,4 +59,41 @@ pub fn build(b: *std.Build) void {
     }
     const bench_step = b.step("bench", "Run benchmarks");
     bench_step.dependOn(&run_bench.step);
+
+    // Autoresearch benchmark (focused, machine-parseable output)
+    const autobench = b.addExecutable(.{
+        .name = "autobench",
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("src/autobench.zig"),
+            .target = target,
+            .optimize = optimize,
+        }),
+    });
+
+    const run_autobench = b.addRunArtifact(autobench);
+    const autobench_step = b.step("autobench", "Run autoresearch benchmark");
+    autobench_step.dependOn(&run_autobench.step);
+
+    // String-key tests
+    const string_tests = b.addTest(.{
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("src/string_hybrid.zig"),
+            .target = target,
+            .optimize = optimize,
+        }),
+    });
+    test_step.dependOn(&b.addRunArtifact(string_tests).step);
+
+    // String-key benchmark
+    const autobench_strings = b.addExecutable(.{
+        .name = "autobench-strings",
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("src/autobench-strings.zig"),
+            .target = target,
+            .optimize = optimize,
+        }),
+    });
+    const run_autobench_strings = b.addRunArtifact(autobench_strings);
+    const autobench_strings_step = b.step("autobench-strings", "Run string key benchmarks");
+    autobench_strings_step.dependOn(&run_autobench_strings.step);
 }
