@@ -1,6 +1,6 @@
 # elastic-hash-zig
 
-Elastic hashing implementation in Zig. Based on [Optimal Bounds for Open Addressing Without Reordering](https://arxiv.org/abs/2501.02305) (Farach-Colton, Krapivin, Kuszmaul 2025).
+SIMD hash table in Zig, inspired by [Optimal Bounds for Open Addressing Without Reordering](https://arxiv.org/abs/2501.02305) (Farach-Colton, Krapivin, Kuszmaul 2025). Uses the paper's tiered batch insertion and multi-tier lookup via opaque overflow.
 
 Requires Zig 0.14+ (tested on 0.16.0-dev).
 
@@ -8,49 +8,62 @@ See my blog post for a walkthrough: [www.joshtuddenham.dev/blog/hashmaps](https:
 
 ## vs Google's abseil `flat_hash_map`
 
-Benchmarked against `absl::flat_hash_map` (the original SwissTable) using random keys, identical table capacity for both sides, median of 10 measured runs with 2 warmup discards. Both compiled with `-O3 -march=native -DNDEBUG`. See `bench-abseil.cpp` and `src/autobench.zig` for the full harness.
+Benchmarked against `absl::flat_hash_map` (the original SwissTable) with u64 keys. Both sides use `reserve(n)` / `init(n)` for the same target capacity. Random keys via splitmix64, median of 10 runs, 2 warmup discards. Full methodology and verification in `verify-results.md`.
 
-### At n=1,048,576
+### Hit lookup (shuffled random access, n=1,048,576)
 
-| Operation | Load | Gap (abseil/elastic) | Winner |
-|-----------|------|---------------------|--------|
-| Hit lookup | 99% | **1.05** | Elastic ~5% faster |
-| Hit lookup | 90% | **1.25** | Elastic 25% faster |
-| Hit lookup | 50% | **1.69** | Elastic 69% faster |
-| Hit lookup | 10% | **1.64** | Elastic 64% faster |
-| Miss lookup | 99% | 0.50 | Abseil 2x faster |
-| Insert | 99% | 1.07 | Tied |
-| Delete | 99% | **3.48** | Elastic 3.5x faster |
+| Load | Gap (abseil/elastic) | Winner |
+|------|---------------------|--------|
+| 10% | **1.16** | Elastic 16% faster |
+| 25% | **1.21** | Elastic 21% faster |
+| 50% | **1.18** | Elastic 18% faster |
+| 75% | **1.08** | Elastic 8% faster |
+| 90% | 0.96 | Roughly tied |
+| 99% | 0.86 | Abseil 14% faster |
 
-### Across sizes at 99% load
+### Realistic workloads
 
-| Size | Hit Lookup | Insert | Delete |
-|------|-----------|--------|--------|
-| 16K | 0.37 | 0.33 | **2.6x** |
-| 65K | 0.41 | 0.44 | **2.5x** |
-| 262K | 0.44 | 0.80 | **2.1x** |
-| 1M | **1.05** | 1.07 | **3.0x** |
-| 2M | 0.83 | 1.07 | **2.1x** |
+| Workload | 100K | 500K | 1M |
+|----------|------|------|-----|
+| Mixed r/w (80% hit, 10% miss, 5% ins, 5% del) | 0.77 | **1.49** | 0.98 |
+| Hot-key / zipf-like lookup | 0.72 | **1.07** | **1.29** |
+| Build-then-read (insert N, 10N random reads) | 0.77 | 0.98 | 0.81 |
+
+### Delete performance
+
+2-3x faster than abseil at all sizes and loads. O(1) tombstone marking vs abseil's find-then-erase.
 
 ### Where elastic hash wins
 
-**Hit lookups at all load factors when capacity is matched.** With equal table capacity, elastic hash is faster than abseil for successful lookups across all load factors (10-99%). The advantage comes from a cheaper hash function (single multiply vs abseil's multi-step), entry prefetching that hides DRAM latency for random access, and interleaved key-value storage.
+**Hit lookups at 500K-2M elements, 10-75% load.** The tiered architecture keeps hot fingerprint metadata (1MB for tier 0) in L2 cache, while abseil's flat control byte array (2MB after reserve) spills to L3. This gives a ~15-20% advantage on random-access hit lookups in the sweet spot.
 
-**Delete: 2-3.5x faster at all sizes.** Tombstone marking is O(1) vs abseil's find-then-erase.
+**Mixed read/write workloads at 500K.** Up to 50% faster when the access pattern includes inserts and deletes alongside lookups.
+
+**Delete at all sizes.** 2-3x faster consistently.
 
 ### Where abseil wins
 
-**Miss lookups: 2x faster at 99% load.** Abseil's flat SwissTable layout supports early termination on empty control byte groups -- when a probe finds an empty slot, it knows the key can't exist deeper. Our tiered bucket structure scans all MAX_PROBES=7 buckets regardless. This is a structural limitation of the architecture.
+**Miss lookups: 2-3x faster.** Abseil's early termination on empty control byte groups stops miss probing after 1-2 groups. Our tiered structure scans 7 probes in tier 0 + 7 in tier 1 before concluding a miss.
 
-**Small tables (16K-65K).** Abseil's minimal overhead wins when everything fits in L1. Our tier metadata and two-level addressing add constant overhead per probe.
+**Small tables (<100K).** Everything fits in L1, our tier overhead costs more than it saves.
+
+**Large tables (>4M).** Neither side's metadata fits in L2; abseil's flat layout has slightly less overhead.
+
+**High load (99%).** Tier 0 is nearly full, probe depths increase, and the metadata density advantage disappears.
+
+### Caveats
+
+- Tested with u64 keys only. Abseil's hash is designed for strings and composite keys; our multiply hash is integer-specialized.
+- Single machine (x86_64, ~512KB L2). CPUs with different L2 sizes would shift the sweet spot.
+- Compiled with g++ (abseil) vs Zig/LLVM (elastic hash). Different compiler backends may generate different code quality.
 
 ## Architecture
 
 ### Relationship to the paper
 
-The insertion algorithm follows the paper: tiered arrays (A_1, A_2, ...) with geometrically decreasing sizes, batch insertion with three cases based on tier fullness, and probe limits from the f(epsilon) function.
+**Insertion** follows the paper: tiered arrays with geometrically decreasing sizes, batch insertion with three cases based on tier fullness, and probe limits from the f(epsilon) function.
 
-The lookup diverges for performance: `get()` searches only tier 0, where ~97% of elements reside at 99% load. The remaining ~3% in tier 1 are invisible to `get()`. This is a deliberate tradeoff -- adding tier 1 search to `get()` causes the function to exceed the I-cache budget, regressing all lookups by 10%+. `getWithProbes()` provides the paper-faithful multi-tier search for callers that need completeness.
+**Lookup** searches tier 0 (fast inline path), then calls through an opaque function pointer to check tier 1 (cold overflow path). The function pointer boundary prevents LLVM from cascading optimizations that bloat the hot loop. At 99% load, `get()` finds 100% of elements (97.3% in tier 0, 2.7% in tier 1 via overflow). Early termination on empty slots in the overflow function reduces miss cost in tier 1.
 
 ### SIMD bucketed probing
 
@@ -84,7 +97,9 @@ The lookup diverges for performance: `get()` searches only tier 0, where ~97% of
 - `src/bench.zig` - Full benchmark suite
 - `src/autobench.zig` - Focused benchmark for abseil comparison
 - `bench-abseil.cpp` - Abseil benchmark (identical keys/capacity)
+- `bench-realistic.cpp` - Realistic workload benchmarks
 - `bench-v2.sh` - Runner that builds and compares both
+- `verify-results.md` - Verification methodology and findings
 
 ## Usage
 
@@ -96,11 +111,4 @@ bash bench-v2.sh     # comparison vs abseil (requires abseil-cpp)
 
 ## Optimization log
 
-36 experiments across two benchmark phases. See `results-v2.tsv` for the full log and `insights-v2.md` for analysis. Key wins:
-
-1. Interleaved key-value entries (+28%)
-2. Upper-bit bucket indexing from multiply hash (+45% with sequential keys, less with random)
-3. Software prefetch for entries at probe 0 (+14%)
-4. MAX_PROBES 8 -> 7 (+17%)
-
-70%+ revert rate, consistent with the program's expectation.
+40+ experiments across three rounds. See `results-v2.tsv`, `results-v3.tsv` for logs and `insights-v2.md`, `insights-v3.md`, `verify-results.md` for analysis.
