@@ -5,7 +5,7 @@ const std = @import("std");
 const math = std.math;
 
 pub const BUCKET_SIZE = 16;
-const MAX_PROBES = 8;
+const MAX_PROBES = 7;
 const TOMBSTONE: u8 = 0xFF;
 
 // Paper parameters
@@ -480,7 +480,7 @@ pub const HybridElasticHash = struct {
 
         if (i == 0) {
             self.insertIntoTier(0, h, fp, key, value);
-            if (self.getEmptyFraction(0) <= 0.05) {
+            if (self.getEmptyFraction(0) <= 0.12) {
                 self.current_batch = 1;
             }
             return;

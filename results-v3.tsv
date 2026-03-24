@@ -1,0 +1,2 @@
+commit	find_rate	lookup_gap_99	miss_gap_99	insert_gap_99	status	description
+baseline	97.3	1.012	0.529	1.016	baseline	tier-0-only get(), 27936 elements in tier 1 invisible
