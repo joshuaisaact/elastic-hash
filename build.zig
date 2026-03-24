@@ -109,4 +109,17 @@ pub fn build(b: *std.Build) void {
     const run_autobench_verify = b.addRunArtifact(autobench_verify);
     const autobench_verify_step = b.step("autobench-strings-verify", "Run shuffled verification");
     autobench_verify_step.dependOn(&run_autobench_verify.step);
+
+    // Hit + miss benchmark with shuffled access
+    const autobench_miss = b.addExecutable(.{
+        .name = "autobench-miss",
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("src/autobench-miss.zig"),
+            .target = target,
+            .optimize = optimize,
+        }),
+    });
+    const run_autobench_miss = b.addRunArtifact(autobench_miss);
+    const autobench_miss_step = b.step("autobench-miss", "Run hit + miss shuffled benchmark");
+    autobench_miss_step.dependOn(&run_autobench_miss.step);
 }

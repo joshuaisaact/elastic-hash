@@ -57,6 +57,7 @@ pub const StringElasticHash = struct {
     tier0_bucket_mask: usize,
     tier0_bucket_shift: u6,
     get_overflow_fn: GetOverflowFn,
+    max_probe_depth: []u8, // per home-bucket max probe depth in tier 0
 
     // Insert/management fields
     tier_starts: []usize,
@@ -91,15 +92,18 @@ pub const StringElasticHash = struct {
 
         const fingerprints = try allocator.alloc([BUCKET_SIZE]u8, total_buckets);
         const entries = try allocator.alloc([BUCKET_SIZE]StringEntry, total_buckets);
+        const max_probe_depth = try allocator.alloc(u8, tier0_buckets);
 
         for (fingerprints) |*bucket_fps| {
             @memset(bucket_fps, 0);
         }
+        @memset(max_probe_depth, 0);
 
         return .{
             .allocator = allocator,
             .fingerprints = fingerprints,
             .entries = entries,
+            .max_probe_depth = max_probe_depth,
             .tier_starts = tier_starts,
             .tier_bucket_counts = tier_bucket_counts,
             .tier_slot_counts = tier_slot_counts,
@@ -115,6 +119,7 @@ pub const StringElasticHash = struct {
     pub fn deinit(self: *Self) void {
         self.allocator.free(self.fingerprints);
         self.allocator.free(self.entries);
+        self.allocator.free(self.max_probe_depth);
         self.allocator.free(self.tier_starts);
         self.allocator.free(self.tier_bucket_counts);
         self.allocator.free(self.tier_slot_counts);
@@ -234,6 +239,7 @@ pub const StringElasticHash = struct {
     fn insertIntoTier(self: *Self, tier: usize, h: u64, fp: u8, key: []const u8, value: u64) void {
         const num_buckets = self.tier_bucket_counts[tier];
         const max_probe = @min(num_buckets, MAX_PROBES);
+        const home_bucket = if (tier == 0) bucketIndex(h, 0, num_buckets) else 0;
         var probe: usize = 0;
         while (probe < max_probe) : (probe += 1) {
             const rel_bucket_idx = bucketIndex(h, probe, num_buckets);
@@ -242,6 +248,12 @@ pub const StringElasticHash = struct {
                 self.insertAt(abs_bucket_idx, slot, key, value, fp);
                 self.tier_slot_counts[tier] += 1;
                 self.count += 1;
+                if (tier == 0) {
+                    const depth: u8 = @intCast(probe);
+                    if (depth > self.max_probe_depth[home_bucket]) {
+                        self.max_probe_depth[home_bucket] = depth;
+                    }
+                }
                 return;
             }
         }
@@ -251,6 +263,7 @@ pub const StringElasticHash = struct {
     fn tryInsertWithLimit(self: *Self, tier: usize, h: u64, fp: u8, key: []const u8, value: u64, limit: usize) bool {
         const num_buckets = self.tier_bucket_counts[tier];
         const max_probe = @min(limit, num_buckets);
+        const home_bucket = if (tier == 0) bucketIndex(h, 0, num_buckets) else 0;
         for (0..max_probe) |probe| {
             const rel_bucket_idx = bucketIndex(h, probe, num_buckets);
             const abs_bucket_idx = self.getBucketIdx(tier, rel_bucket_idx);
@@ -258,6 +271,12 @@ pub const StringElasticHash = struct {
                 self.insertAt(abs_bucket_idx, slot, key, value, fp);
                 self.tier_slot_counts[tier] += 1;
                 self.count += 1;
+                if (tier == 0) {
+                    const depth: u8 = @intCast(probe);
+                    if (depth > self.max_probe_depth[home_bucket]) {
+                        self.max_probe_depth[home_bucket] = depth;
+                    }
+                }
                 return true;
             }
         }
@@ -294,6 +313,10 @@ pub const StringElasticHash = struct {
         for (0..MAX_PROBES) |probe| {
             const bucket_idx = (bucket_base +% @as(u64, probe)) & mask;
             if (self.findValueInBucket(bucket_idx, key, fp)) |val| return val;
+            if (matchEmpty(&self.fingerprints[bucket_idx]) != 0) {
+                @branchHint(.cold);
+                return null;
+            }
         }
 
         return self.get_overflow_fn(self, h, key, fp);
