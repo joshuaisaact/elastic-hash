@@ -585,11 +585,6 @@ pub const HybridElasticHash = struct {
         for (0..MAX_PROBES) |probe| {
             const bucket_idx = (bucket_base +% @as(u64, probe)) & mask;
             if (self.findValueInBucket(bucket_idx, key, fp)) |val| return val;
-            // Early termination: empty slot means key can't be deeper in tier 0
-            if (matchEmpty(&self.fingerprints[bucket_idx]) != 0) {
-                // Key not in tier 0, but might be in tier 1
-                return self.get_overflow_fn(self, h, key, fp);
-            }
         }
 
         // Tier 1+: cold path via opaque function pointer (prevents LLVM from
