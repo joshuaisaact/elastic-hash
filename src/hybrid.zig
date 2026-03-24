@@ -581,6 +581,20 @@ pub const HybridElasticHash = struct {
             const bucket_idx = (bucket_base +% @as(u64, probe)) & mask;
             if (self.findValueInBucket(bucket_idx, key, fp)) |val| return val;
         }
+        // Tier 0 miss — check remaining tiers via cold noinline path
+        return self.getSlowPath(h, key, fp);
+    }
+
+    /// Cold path for elements not found in tier 0. Noinline to keep get() small.
+    noinline fn getSlowPath(self: *const Self, h: u64, key: u64, fp: u8) ?u64 {
+        for (1..self.num_tiers) |tier| {
+            const num_buckets = self.tier_bucket_counts[tier];
+            const tier_start = self.tier_starts[tier];
+            for (0..@min(MAX_PROBES, num_buckets)) |probe| {
+                const rel_idx = bucketIndex(h, probe, num_buckets);
+                if (self.findValueInBucket(tier_start + rel_idx, key, fp)) |val| return val;
+            }
+        }
         return null;
     }
 
