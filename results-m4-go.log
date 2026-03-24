@@ -1,0 +1,12 @@
+RESULT	impl=go-swiss	n=1048576	load=10	insert_us=6679	lookup_us=5160	miss_us=3743	delete_us=3061
+RESULT	impl=go-swiss	n=1048576	load=25	insert_us=17697	lookup_us=16588	miss_us=12279	delete_us=8017
+RESULT	impl=go-swiss	n=1048576	load=50	insert_us=30723	lookup_us=32722	miss_us=25019	delete_us=15019
+RESULT	impl=go-swiss	n=1048576	load=75	insert_us=45827	lookup_us=51002	miss_us=38947	delete_us=22311
+RESULT	impl=go-swiss	n=1048576	load=90	insert_us=59689	lookup_us=67572	miss_us=53266	delete_us=29939
+RESULT	impl=go-swiss	n=1048576	load=99	insert_us=71083	lookup_us=78009	miss_us=67119	delete_us=35357
+RESULT	impl=go-builtin	n=1048576	load=10	insert_us=7712	lookup_us=4690	miss_us=4133	delete_us=5982
+RESULT	impl=go-builtin	n=1048576	load=25	insert_us=18593	lookup_us=16631	miss_us=13920	delete_us=15288
+RESULT	impl=go-builtin	n=1048576	load=50	insert_us=38147	lookup_us=38163	miss_us=29939	delete_us=29424
+RESULT	impl=go-builtin	n=1048576	load=75	insert_us=52671	lookup_us=54561	miss_us=43143	delete_us=39642
+RESULT	impl=go-builtin	n=1048576	load=90	insert_us=59952	lookup_us=64953	miss_us=51711	delete_us=47548
+RESULT	impl=go-builtin	n=1048576	load=99	insert_us=67985	lookup_us=74073	miss_us=59352	delete_us=52721
