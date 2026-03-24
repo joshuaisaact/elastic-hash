@@ -577,9 +577,25 @@ pub const HybridElasticHash = struct {
         // Prefetch entries for probe 0 (random access, hardware prefetcher can't predict)
         @prefetch(@as([*]const u8, @ptrCast(&self.entries[bucket_base & mask])), .{ .rw = .read, .locality = 3 });
 
+        // Tier 0: fast path (~97% of elements at 99% load)
         for (0..MAX_PROBES) |probe| {
             const bucket_idx = (bucket_base +% @as(u64, probe)) & mask;
             if (self.findValueInBucket(bucket_idx, key, fp)) |val| return val;
+        }
+
+        // Tier 1+: cold path for remaining ~3% (paper-faithful multi-tier search)
+        return self.getOtherTiers(h, key, fp);
+    }
+
+    noinline fn getOtherTiers(self: *const Self, h: u64, key: u64, fp: u8) ?u64 {
+        @branchHint(.cold);
+        for (1..self.num_tiers) |tier| {
+            const num_buckets = self.tier_bucket_counts[tier];
+            const tier_start = self.tier_starts[tier];
+            for (0..@min(MAX_PROBES, num_buckets)) |probe| {
+                const rel_idx = bucketIndex(h, probe, num_buckets);
+                if (self.findValueInBucket(tier_start + rel_idx, key, fp)) |val| return val;
+            }
         }
         return null;
     }
