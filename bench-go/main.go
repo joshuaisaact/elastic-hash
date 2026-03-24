@@ -62,6 +62,14 @@ func benchSwiss(n, fill, loadPct int) {
 		order[i], order[j] = order[j], order[i]
 	}
 
+	// Pre-allocate strings BEFORE timed loops (avoids GC during measurement)
+	keyStrings := make([]string, fill)
+	missStrings := make([]string, fill)
+	for i := 0; i < fill; i++ {
+		keyStrings[i] = string(keys[i][:])
+		missStrings[i] = string(missKeys[i][:])
+	}
+
 	ins := make([]uint64, measured)
 	lkp := make([]uint64, measured)
 	del := make([]uint64, measured)
@@ -72,7 +80,7 @@ func benchSwiss(n, fill, loadPct int) {
 
 		start := time.Now()
 		for i := 0; i < fill; i++ {
-			m.Put(string(keys[i][:]), uint64(i))
+			m.Put(keyStrings[i], uint64(i))
 		}
 		insertUs := uint64(time.Since(start).Microseconds())
 
@@ -80,7 +88,7 @@ func benchSwiss(n, fill, loadPct int) {
 		start = time.Now()
 		for i := 0; i < fill; i++ {
 			ki := order[i]
-			v, _ := m.Get(string(keys[ki][:]))
+			v, _ := m.Get(keyStrings[ki])
 			_ = v
 		}
 		lookupUs := uint64(time.Since(start).Microseconds())
@@ -89,7 +97,7 @@ func benchSwiss(n, fill, loadPct int) {
 		start = time.Now()
 		for i := 0; i < fill; i++ {
 			ki := order[i]
-			_, ok := m.Get(string(missKeys[ki][:]))
+			_, ok := m.Get(missStrings[ki])
 			_ = ok
 		}
 		missUs := uint64(time.Since(start).Microseconds())
@@ -97,7 +105,7 @@ func benchSwiss(n, fill, loadPct int) {
 		// Delete
 		start = time.Now()
 		for i := 0; i < fill/2; i++ {
-			m.Delete(string(keys[i][:]))
+			m.Delete(keyStrings[i])
 		}
 		deleteUs := uint64(time.Since(start).Microseconds())
 
@@ -135,6 +143,13 @@ func benchBuiltin(n, fill, loadPct int) {
 		order[i], order[j] = order[j], order[i]
 	}
 
+	keyStrings := make([]string, fill)
+	missStrings := make([]string, fill)
+	for i := 0; i < fill; i++ {
+		keyStrings[i] = string(keys[i][:])
+		missStrings[i] = string(missKeys[i][:])
+	}
+
 	ins := make([]uint64, measured)
 	lkp := make([]uint64, measured)
 	mis := make([]uint64, measured)
@@ -145,14 +160,14 @@ func benchBuiltin(n, fill, loadPct int) {
 
 		start := time.Now()
 		for i := 0; i < fill; i++ {
-			m[string(keys[i][:])] = uint64(i)
+			m[keyStrings[i]] = uint64(i)
 		}
 		insertUs := uint64(time.Since(start).Microseconds())
 
 		start = time.Now()
 		for i := 0; i < fill; i++ {
 			ki := order[i]
-			v := m[string(keys[ki][:])]
+			v := m[keyStrings[ki]]
 			_ = v
 		}
 		lookupUs := uint64(time.Since(start).Microseconds())
@@ -160,14 +175,14 @@ func benchBuiltin(n, fill, loadPct int) {
 		start = time.Now()
 		for i := 0; i < fill; i++ {
 			ki := order[i]
-			_, ok := m[string(missKeys[ki][:])]
+			_, ok := m[missStrings[ki]]
 			_ = ok
 		}
 		missUs := uint64(time.Since(start).Microseconds())
 
 		start = time.Now()
 		for i := 0; i < fill/2; i++ {
-			delete(m, string(keys[i][:]))
+			delete(m, keyStrings[i])
 		}
 		deleteUs := uint64(time.Since(start).Microseconds())
 
