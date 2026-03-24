@@ -480,7 +480,7 @@ pub const HybridElasticHash = struct {
 
         if (i == 0) {
             self.insertIntoTier(0, h, fp, key, value);
-            if (self.getEmptyFraction(0) <= 0.05) {
+            if (self.getEmptyFraction(0) <= 0.12) {
                 self.current_batch = 1;
             }
             return;
