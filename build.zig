@@ -135,4 +135,17 @@ pub fn build(b: *std.Build) void {
     const run_autobench_churn = b.addRunArtifact(autobench_churn);
     const autobench_churn_step = b.step("autobench-churn", "Run tombstone churn test");
     autobench_churn_step.dependOn(&run_autobench_churn.step);
+
+    // Mixed workload benchmark
+    const autobench_mixed = b.addExecutable(.{
+        .name = "autobench-mixed",
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("src/autobench-mixed.zig"),
+            .target = target,
+            .optimize = optimize,
+        }),
+    });
+    const run_autobench_mixed = b.addRunArtifact(autobench_mixed);
+    const autobench_mixed_step = b.step("autobench-mixed", "Run mixed workload benchmark");
+    autobench_mixed_step.dependOn(&run_autobench_mixed.step);
 }
