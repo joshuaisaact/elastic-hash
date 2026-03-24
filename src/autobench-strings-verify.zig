@@ -1,7 +1,6 @@
 //! Shuffled vs ordered string key lookup verification
 const std = @import("std");
 const StringElasticHash = @import("string_hybrid.zig").StringElasticHash;
-const linux = std.os.linux;
 const sort = std.sort;
 
 const KEY_SEED: u64 = 0xDEADBEEF12345678;
@@ -25,16 +24,12 @@ fn u64ToHex(val: u64, buf: *[KEY_LEN]u8) void {
     inline while (i > 0) { i -= 1; buf[i] = hex_chars[@as(usize, @intCast(v & 0xF))]; v >>= 4; }
 }
 
-fn now() linux.timespec {
-    var ts: linux.timespec = undefined;
-    _ = linux.clock_gettime(.MONOTONIC, &ts);
-    return ts;
+fn now() i128 {
+    return std.time.nanoTimestamp();
 }
 
-fn usElapsed(start: linux.timespec, end: linux.timespec) u64 {
-    const s: u64 = @intCast(end.sec - start.sec);
-    const ns_diff: i64 = @as(i64, @intCast(end.nsec)) - @as(i64, @intCast(start.nsec));
-    return (s * 1_000_000_000 + @as(u64, @intCast(ns_diff))) / 1_000;
+fn usElapsed(start: i128, end: i128) u64 {
+    return @intCast(@divTrunc(end - start, 1_000));
 }
 
 fn median(arr: *[MEASURED]u64) u64 {
@@ -63,9 +58,9 @@ fn bench(allocator: std.mem.Allocator, n: usize, fill: usize, load_pct: usize) v
         defer map.deinit();
         for (0..fill) |i| map.insert(&key_buf[i], i);
 
-        var start = now();
+        var start: i128 = now();
         for (0..fill) |i| std.mem.doNotOptimizeAway(map.get(&key_buf[i]));
-        var end = now();
+        var end: i128 = now();
         const ordered_us = usElapsed(start, end);
 
         start = now();

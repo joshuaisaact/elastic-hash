@@ -51,10 +51,18 @@ Benchmarked against `absl::flat_hash_map` (the original SwissTable) with u64 key
 
 **High load (99%).** Tier 0 is nearly full, probe depths increase, and the metadata density advantage disappears.
 
+### Cross-architecture: x86 vs Apple Silicon M4
+
+| Platform | L2 cache | Shuffled hit gap at 50% |
+|----------|----------|------------------------|
+| x86 (Linux) | ~512KB | **1.74x** |
+| Apple M4 | ~16MB | **2.59x** |
+
+The advantage is not cache-level-specific. On M4, both fingerprint arrays fit in L2, yet the gap *grew*. The win comes from cache lines touched per probe: separated, dense fingerprints mean fewer fetches under random access regardless of cache hierarchy. Full M4 results in `cross-lang-results.md`.
+
 ### Caveats
 
-- Tested with u64 keys only. Abseil's hash is designed for strings and composite keys; our multiply hash is integer-specialized.
-- Single machine (x86_64, ~512KB L2). CPUs with different L2 sizes would shift the sweet spot.
+- Tested with u64 and 16-byte string keys.
 - Compiled with g++ (abseil) vs Zig/LLVM (elastic hash). Different compiler backends may generate different code quality.
 
 ## Architecture

@@ -124,9 +124,24 @@ If the shuffled hit lookup gap at 1M 50% is:
 - Is Rust+ahash still faster than abseil on M4?
 - Does Go's performance change relative to the native-compiled implementations?
 
-## Report results
+## Results
 
-Just paste the terminal output or save the log files. The numbers tell the story.
+### Shuffled hit lookup (the key test)
+
+| Load | Elastic (Zig) | Abseil (C++) | M4 ratio | x86 ratio |
+|------|--------------|-------------|----------|-----------|
+| 10% | 719 | 2,861 | **3.98x** | 1.97x |
+| 25% | 2,276 | 10,169 | **4.47x** | 1.86x |
+| 50% | 8,863 | 22,984 | **2.59x** | 1.74x |
+| 75% | 15,972 | 33,624 | **2.11x** | 1.61x |
+| 90% | 22,118 | 41,671 | **1.88x** | 1.50x |
+| 99% | 25,748 | 46,543 | **1.81x** | 1.36x |
+
+### Verdict
+
+The prediction was wrong. The advantage is **not** cache-density-specific. At 50% load the gap went from 1.74x on x86 to 2.59x on M4 -- it grew by 49%.
+
+The mechanism is cache lines touched per probe, not which cache level the data lives in. Separated, dense fingerprint arrays mean fewer cache line fetches under random access, and this holds regardless of L2 size.
 
 ### x86 reference (from Linux, AMD/Intel ~512KB L2)
 

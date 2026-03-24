@@ -6,7 +6,50 @@ Fairness fixes from v1:
 - Rust: added ahash (fast hasher) alongside default SipHash
 - Go: pre-allocated strings before timed loops (no GC during measurement)
 
-## Hit lookup times (us, lower is better)
+## Apple Silicon M4 results
+
+Tested on M4 (~16MB shared L2). The hypothesis was that elastic hash's advantage was cache-density-specific: our 1MB fingerprint array fits in x86's ~512KB L2 while abseil's 2MB control bytes spill to L3. On M4, both should fit in L2, so the advantage should shrink or disappear.
+
+**It didn't.** It got bigger.
+
+### Shuffled hit lookup (us, lower is better)
+
+| Load | Elastic (Zig) | Abseil (C++) | Ratio |
+|------|--------------|-------------|-------|
+| 10% | **719** | 2,861 | **3.98x** |
+| 25% | **2,276** | 10,169 | **4.47x** |
+| 50% | **8,863** | 22,984 | **2.59x** |
+| 75% | **15,972** | 33,624 | **2.11x** |
+| 90% | **22,118** | 41,671 | **1.88x** |
+| 99% | **25,748** | 46,543 | **1.81x** |
+
+### x86 vs M4 comparison (shuffled hit lookup at 50% load)
+
+| Platform | Elastic | Abseil | Gap |
+|----------|---------|--------|-----|
+| x86 (~512KB L2) | 11,119 | 19,312 | **1.74x** |
+| M4 (~16MB L2) | 8,863 | 22,984 | **2.59x** |
+
+The advantage grew from 1.74x to 2.59x. The tiered metadata advantage is not about L2 vs L3 spill -- it's about cache lines touched per probe. Separated, dense fingerprint arrays mean fewer cache line fetches under random access, regardless of which cache level they live in.
+
+### Full cross-language M4 results (unshuffled)
+
+| Load | Elastic (Zig) | Abseil (C++) | Rust+ahash | Go swiss | Go builtin |
+|------|--------------|-------------|-----------|---------|-----------|
+| 10% | **1,065** | 1,707 | 2,187 | 5,160 | 4,690 |
+| 25% | **4,056** | 4,555 | 7,699 | 16,588 | 16,631 |
+| 50% | **8,404** | 9,027 | 16,838 | 32,722 | 38,163 |
+| 75% | 16,557 | **14,110** | 32,883 | 51,002 | 54,561 |
+| 90% | **15,913** | 17,994 | 45,691 | 67,572 | 64,953 |
+| 99% | 19,491 | **18,420** | 40,120 | 78,009 | 74,073 |
+
+Note: unshuffled results show a much smaller gap vs abseil (1.07x at 50%) because sequential access doesn't stress cache line efficiency. The shuffled test is the realistic one.
+
+---
+
+## x86 results (Linux, AMD/Intel ~512KB L2)
+
+### Hit lookup times (us, lower is better)
 
 | Load | Elastic (Zig) | Abseil (C++) | Rust+ahash | Rust+siphash | Go swiss | Go builtin |
 |------|--------------|-------------|-----------|-------------|---------|-----------|

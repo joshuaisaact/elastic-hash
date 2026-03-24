@@ -1,0 +1,9 @@
+RESULT	n=16384	load=99	insert_us=92	lookup_us=64	delete_us=70	miss_us=59
+RESULT	n=65536	load=99	insert_us=540	lookup_us=397	delete_us=371	miss_us=312
+RESULT	n=262144	load=99	insert_us=2764	lookup_us=2437	delete_us=1642	miss_us=1435
+RESULT	n=1048576	load=99	insert_us=21870	lookup_us=18420	delete_us=12156	miss_us=8840
+RESULT	n=1048576	load=10	insert_us=2060	lookup_us=1707	delete_us=1115	miss_us=405
+RESULT	n=1048576	load=25	insert_us=5268	lookup_us=4555	delete_us=2939	miss_us=1251
+RESULT	n=1048576	load=50	insert_us=10580	lookup_us=9027	delete_us=5965	miss_us=3047
+RESULT	n=1048576	load=75	insert_us=16404	lookup_us=14110	delete_us=9207	miss_us=5719
+RESULT	n=1048576	load=90	insert_us=20927	lookup_us=17994	delete_us=11458	miss_us=8075

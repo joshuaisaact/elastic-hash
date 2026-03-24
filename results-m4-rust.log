@@ -1,0 +1,12 @@
+RESULT	impl=rust-ahash	n=1048576	load=10	insert_us=1758	lookup_us=2187	miss_us=715	delete_us=1553
+RESULT	impl=rust-siphash	n=1048576	load=10	lookup_us=4866
+RESULT	impl=rust-ahash	n=1048576	load=25	insert_us=5073	lookup_us=7699	miss_us=2067	delete_us=4083
+RESULT	impl=rust-siphash	n=1048576	load=25	lookup_us=15258
+RESULT	impl=rust-ahash	n=1048576	load=50	insert_us=10258	lookup_us=16838	miss_us=5861	delete_us=7920
+RESULT	impl=rust-siphash	n=1048576	load=50	lookup_us=39449
+RESULT	impl=rust-ahash	n=1048576	load=75	insert_us=18192	lookup_us=32883	miss_us=16096	delete_us=13899
+RESULT	impl=rust-siphash	n=1048576	load=75	lookup_us=58969
+RESULT	impl=rust-ahash	n=1048576	load=90	insert_us=23545	lookup_us=45691	miss_us=22912	delete_us=17553
+RESULT	impl=rust-siphash	n=1048576	load=90	lookup_us=78175
+RESULT	impl=rust-ahash	n=1048576	load=99	insert_us=23243	lookup_us=40120	miss_us=20886	delete_us=17037
+RESULT	impl=rust-siphash	n=1048576	load=99	lookup_us=86523
