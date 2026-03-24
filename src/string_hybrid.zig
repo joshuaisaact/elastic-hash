@@ -125,7 +125,59 @@ pub const StringElasticHash = struct {
     }
 
     inline fn hash(key: []const u8) u64 {
-        return Wyhash.hash(0, key);
+        return fastStringHash(key);
+    }
+
+    /// Fast string hash inspired by abseil's MixingHashState.
+    /// For 9-16 byte keys: read two overlapping u64s, single 128-bit multiply.
+    /// For other sizes: fall back to wyhash.
+    inline fn fastStringHash(key: []const u8) u64 {
+        const kMul: u64 = 0x79d5f9e0de1e8cf5;
+        // Precomputed from pi digits, matches abseil's kStaticRandomData
+        const kRandomData = [5]u64{
+            0x243f6a8885a308d3, 0x13198a2e03707344,
+            0xa4093822299f31d0, 0x082efa98ec4e6c89,
+            0x452821e638d01377,
+        };
+
+        const len = key.len;
+        if (len >= 9 and len <= 16) {
+            // Abseil's fast path for 9-16 byte keys
+            const state = @as(u64, @bitCast(
+                @as([8]u8, @as(*const [8]u8, @ptrCast(&kRandomData)).*),
+            )) ^ len;
+            _ = state;
+
+            const first8 = std.mem.readInt(u64, key[0..8], .little);
+            const last8 = std.mem.readInt(u64, key[len - 8 ..][0..8], .little);
+
+            // Mix: 128-bit multiply, XOR high and low
+            const seed: u64 = kRandomData[0] ^ len;
+            const r = @as(u128, seed ^ first8) *% @as(u128, kMul ^ last8);
+            return @as(u64, @truncate(r)) ^ @as(u64, @truncate(r >> 64));
+        } else if (len <= 8) {
+            // Small keys: read what we can, mix
+            if (len >= 4) {
+                const a = std.mem.readInt(u32, key[0..4], .little);
+                const b = std.mem.readInt(u32, key[len - 4 ..][0..4], .little);
+                const combined = @as(u64, a) | (@as(u64, b) << 32);
+                const seed: u64 = kRandomData[0] ^ len;
+                const r = @as(u128, seed ^ combined) *% @as(u128, kMul);
+                return @as(u64, @truncate(r)) ^ @as(u64, @truncate(r >> 64));
+            } else if (len > 0) {
+                const a: u64 = key[0];
+                const b: u64 = key[len / 2];
+                const c: u64 = key[len - 1];
+                const combined = a | (b << 8) | (c << 16) | (len << 24);
+                const r = @as(u128, combined *% kMul) *% @as(u128, kRandomData[0]);
+                return @as(u64, @truncate(r)) ^ @as(u64, @truncate(r >> 64));
+            } else {
+                return kRandomData[0];
+            }
+        } else {
+            // >16 bytes: fall back to wyhash
+            return Wyhash.hash(0, key);
+        }
     }
 
     inline fn fingerprint(h: u64) u8 {
