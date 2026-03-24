@@ -148,4 +148,30 @@ pub fn build(b: *std.Build) void {
     const run_autobench_mixed = b.addRunArtifact(autobench_mixed);
     const autobench_mixed_step = b.step("autobench-mixed", "Run mixed workload benchmark");
     autobench_mixed_step.dependOn(&run_autobench_mixed.step);
+
+    // Memory overhead
+    const autobench_memory = b.addExecutable(.{
+        .name = "autobench-memory",
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("src/autobench-memory.zig"),
+            .target = target,
+            .optimize = optimize,
+        }),
+    });
+    const run_autobench_memory = b.addRunArtifact(autobench_memory);
+    const autobench_memory_step = b.step("autobench-memory", "Report memory overhead");
+    autobench_memory_step.dependOn(&run_autobench_memory.step);
+
+    // Variable key length
+    const autobench_keylen = b.addExecutable(.{
+        .name = "autobench-keylen",
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("src/autobench-keylen.zig"),
+            .target = target,
+            .optimize = optimize,
+        }),
+    });
+    const run_autobench_keylen = b.addRunArtifact(autobench_keylen);
+    const autobench_keylen_step = b.step("autobench-keylen", "Run variable key length benchmark");
+    autobench_keylen_step.dependOn(&run_autobench_keylen.step);
 }
