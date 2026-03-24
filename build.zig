@@ -122,4 +122,17 @@ pub fn build(b: *std.Build) void {
     const run_autobench_miss = b.addRunArtifact(autobench_miss);
     const autobench_miss_step = b.step("autobench-miss", "Run hit + miss shuffled benchmark");
     autobench_miss_step.dependOn(&run_autobench_miss.step);
+
+    // Tombstone churn test
+    const autobench_churn = b.addExecutable(.{
+        .name = "autobench-churn",
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("src/autobench-churn.zig"),
+            .target = target,
+            .optimize = optimize,
+        }),
+    });
+    const run_autobench_churn = b.addRunArtifact(autobench_churn);
+    const autobench_churn_step = b.step("autobench-churn", "Run tombstone churn test");
+    autobench_churn_step.dependOn(&run_autobench_churn.step);
 }
