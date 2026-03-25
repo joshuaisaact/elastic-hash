@@ -258,13 +258,16 @@ pub const StringElasticHashGrowth = struct {
         self.count = 0;
         self.current_batch = 0;
 
-        // Rehash all old elements
+        // Rehash all old elements (use insertNew — no duplicate check needed,
+        // and avoids triggering needsResize during rehash)
         for (0..old_total_buckets) |bi| {
             for (0..BUCKET_SIZE) |si| {
                 const fp_val = old_fps[bi][si];
                 if (fp_val != 0 and fp_val != TOMBSTONE) {
                     const entry = old_entries[bi][si];
-                    self.insert(entry.key(), entry.value);
+                    const h = hash(entry.key());
+                    const fp = fingerprint(h);
+                    self.insertNew(h, fp, entry.key(), entry.value);
                 }
             }
         }
@@ -278,6 +281,39 @@ pub const StringElasticHashGrowth = struct {
         self.allocator.free(old_tier_slot_counts);
     }
 
+    /// Find an existing key and update its value. Returns true if found.
+    fn updateExisting(self: *Self, h: u64, key: []const u8, value: u64, fp: u8) bool {
+        const mask = self.tier0_bucket_mask;
+        const bucket_base = h >> self.tier0_bucket_shift;
+
+        // Search tier 0
+        for (0..MAX_PROBES) |probe| {
+            const bucket_idx = (bucket_base +% @as(u64, probe)) & mask;
+            if (self.findKeyInBucket(bucket_idx, key, fp)) |slot| {
+                self.entries[bucket_idx][slot].value = value;
+                return true;
+            }
+            if (matchEmpty(&self.fingerprints[bucket_idx]) != 0) break;
+        }
+
+        // Search tier 1
+        if (self.num_tiers > 1) {
+            const num_buckets = self.tier_bucket_counts[1];
+            const tier_start = self.tier_starts[1];
+            for (0..@min(MAX_PROBES, num_buckets)) |probe| {
+                const abs_idx = tier_start + bucketIndex(h, probe, num_buckets);
+                if (self.findKeyInBucket(abs_idx, key, fp)) |slot| {
+                    self.entries[abs_idx][slot].value = value;
+                    return true;
+                }
+                if (matchEmpty(&self.fingerprints[abs_idx]) != 0) break;
+            }
+        }
+
+        return false;
+    }
+
+    /// Insert a key-value pair, updating the value if the key already exists.
     pub fn insert(self: *Self, key: []const u8, value: u64) void {
         if (self.needsResize()) {
             self.resize();
@@ -285,6 +321,15 @@ pub const StringElasticHashGrowth = struct {
 
         const h = hash(key);
         const fp = fingerprint(h);
+
+        // Check for existing key first
+        if (self.updateExisting(h, key, value, fp)) return;
+
+        self.insertNew(h, fp, key, value);
+    }
+
+    /// Internal: insert without duplicate check (used by resize rehash).
+    fn insertNew(self: *Self, h: u64, fp: u8, key: []const u8, value: u64) void {
         const i = self.current_batch;
 
         if (i == 0) {
@@ -479,4 +524,133 @@ test "string remove" {
     try std.testing.expectEqual(@as(?u64, null), map.get("b"));
     try std.testing.expectEqual(@as(?u64, 1), map.get("a"));
     try std.testing.expectEqual(@as(?u64, 3), map.get("c"));
+}
+
+test "duplicate key updates value" {
+    var map = try StringElasticHashGrowth.init(std.testing.allocator, 1024);
+    defer map.deinit();
+
+    map.insert("key", 100);
+    try std.testing.expectEqual(@as(?u64, 100), map.get("key"));
+    try std.testing.expectEqual(@as(usize, 1), map.count);
+
+    // Insert same key with different value — should update, not create duplicate
+    map.insert("key", 200);
+    try std.testing.expectEqual(@as(?u64, 200), map.get("key"));
+    try std.testing.expectEqual(@as(usize, 1), map.count);
+
+    // Third update
+    map.insert("key", 300);
+    try std.testing.expectEqual(@as(?u64, 300), map.get("key"));
+    try std.testing.expectEqual(@as(usize, 1), map.count);
+}
+
+test "duplicate keys at scale" {
+    var map = try StringElasticHashGrowth.init(std.testing.allocator, 1024);
+    defer map.deinit();
+
+    // Insert 500 unique keys
+    var buf: [500][16]u8 = undefined;
+    for (0..500) |i| {
+        _ = std.fmt.bufPrint(&buf[i], "{d:0>16}", .{i}) catch unreachable;
+        map.insert(&buf[i], i);
+    }
+    try std.testing.expectEqual(@as(usize, 500), map.count);
+
+    // Re-insert all 500 with new values — count should stay 500
+    for (0..500) |i| {
+        map.insert(&buf[i], i + 1000);
+    }
+    try std.testing.expectEqual(@as(usize, 500), map.count);
+
+    // Verify updated values
+    for (0..500) |i| {
+        try std.testing.expectEqual(@as(?u64, i + 1000), map.get(&buf[i]));
+    }
+}
+
+test "resize triggers and preserves data" {
+    // Start with tiny capacity so resize actually triggers
+    var map = try StringElasticHashGrowth.init(std.testing.allocator, 16);
+    defer map.deinit();
+
+    // Insert enough to trigger resize (capacity=16, threshold=87.5% = 14 elements)
+    var buf: [64][16]u8 = undefined;
+    for (0..64) |i| {
+        _ = std.fmt.bufPrint(&buf[i], "{d:0>16}", .{i}) catch unreachable;
+        map.insert(&buf[i], i);
+    }
+
+    // Verify all 64 elements survived resize(s)
+    try std.testing.expectEqual(@as(usize, 64), map.count);
+    for (0..64) |i| {
+        const val = map.get(&buf[i]);
+        try std.testing.expect(val != null);
+        try std.testing.expectEqual(@as(u64, i), val.?);
+    }
+
+    // Verify miss keys still return null
+    var miss_buf: [16]u8 = undefined;
+    _ = std.fmt.bufPrint(&miss_buf, "{d:0>16}", .{@as(usize, 9999)}) catch unreachable;
+    try std.testing.expectEqual(@as(?u64, null), map.get(&miss_buf));
+}
+
+test "resize with duplicates" {
+    var map = try StringElasticHashGrowth.init(std.testing.allocator, 16);
+    defer map.deinit();
+
+    var buf: [32][16]u8 = undefined;
+    for (0..32) |i| {
+        _ = std.fmt.bufPrint(&buf[i], "{d:0>16}", .{i}) catch unreachable;
+        map.insert(&buf[i], i);
+    }
+
+    // Update all values — this should not increase count
+    for (0..32) |i| {
+        map.insert(&buf[i], i + 500);
+    }
+    try std.testing.expectEqual(@as(usize, 32), map.count);
+
+    // Verify updated values
+    for (0..32) |i| {
+        try std.testing.expectEqual(@as(?u64, i + 500), map.get(&buf[i]));
+    }
+}
+
+test "resize then delete then insert" {
+    var map = try StringElasticHashGrowth.init(std.testing.allocator, 16);
+    defer map.deinit();
+
+    var buf: [64][16]u8 = undefined;
+    for (0..64) |i| {
+        _ = std.fmt.bufPrint(&buf[i], "{d:0>16}", .{i}) catch unreachable;
+        map.insert(&buf[i], i);
+    }
+    try std.testing.expectEqual(@as(usize, 64), map.count);
+
+    // Delete half
+    for (0..32) |i| {
+        try std.testing.expect(map.remove(&buf[i]));
+    }
+    try std.testing.expectEqual(@as(usize, 32), map.count);
+
+    // Verify deleted keys return null
+    for (0..32) |i| {
+        try std.testing.expectEqual(@as(?u64, null), map.get(&buf[i]));
+    }
+
+    // Verify surviving keys
+    for (32..64) |i| {
+        try std.testing.expectEqual(@as(?u64, i), map.get(&buf[i]));
+    }
+
+    // Re-insert deleted keys with new values
+    for (0..32) |i| {
+        map.insert(&buf[i], i + 2000);
+    }
+    try std.testing.expectEqual(@as(usize, 64), map.count);
+
+    for (0..32) |i| {
+        try std.testing.expectEqual(@as(?u64, i + 2000), map.get(&buf[i]));
+    }
 }
