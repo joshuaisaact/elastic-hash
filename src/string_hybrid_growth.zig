@@ -296,6 +296,7 @@ pub const StringElasticHashGrowth = struct {
         // Single pass through tier 0: find existing key OR first empty/tombstone slot
         var first_empty_bucket: usize = undefined;
         var first_empty_slot: usize = undefined;
+        var first_empty_probe: usize = undefined;
         var found_empty = false;
 
         for (0..MAX_PROBES) |probe| {
@@ -312,6 +313,7 @@ pub const StringElasticHashGrowth = struct {
                 if (self.findEmptyOrTombstoneInBucket(bucket_idx)) |slot| {
                     first_empty_bucket = bucket_idx;
                     first_empty_slot = slot;
+                    first_empty_probe = probe;
                     found_empty = true;
                 }
             }
@@ -339,6 +341,12 @@ pub const StringElasticHashGrowth = struct {
             self.insertAt(first_empty_bucket, first_empty_slot, key, value, fp);
             self.tier_slot_counts[0] += 1;
             self.count += 1;
+            // Update max probe depth for this home bucket
+            const home_bucket = bucket_base & mask;
+            const depth: u8 = @intCast(first_empty_probe);
+            if (depth > self.max_probe_depth[home_bucket]) {
+                self.max_probe_depth[home_bucket] = depth;
+            }
             if (self.current_batch == 0 and self.getEmptyFraction(0) <= 0.12) {
                 self.current_batch = 1;
             }
