@@ -117,6 +117,27 @@ Advantage grows with key length because fingerprint pre-filtering skips more exp
 
 **Memory:** Identical to abseil. 1.00x at every capacity tested.
 
+## Growth policy overhead
+
+Adding an abseil-style resize check (`count * 8 > capacity * 7`) to every insert adds 37% overhead at 50% load, even when resize never triggers. This is just the branch — not the resize itself. Abseil's insert path has this plus hashtablez sampling plus other bookkeeping. The simpler insert path accounts for a significant chunk of the 2.6x insert advantage.
+
+With the growth policy, the production-ready version (`string_hybrid_growth.zig`) also handles:
+- **Duplicate keys:** insert checks for existing key and updates value instead of creating a second entry
+- **Automatic resize:** doubles capacity when load exceeds 87.5%, rehashes all elements
+
+## Go comparison
+
+Same algorithm in Go (no SIMD) vs cockroachdb/swiss.Map (shuffled, 1M, 50% load):
+
+| Operation | Elastic Go | swiss.Map | Ratio |
+|---|---|---|---|
+| Hit lookup | 52,600us | 31,600us | **1.66x slower** |
+| Miss lookup | 49,150us | 24,200us | **2.03x slower** |
+| Insert | 14,500us | 25,400us | **1.75x faster** |
+| Delete | 9,900us | 13,200us | **1.33x faster** |
+
+Without SIMD, the scalar fingerprint matching loop is the bottleneck. The lookup advantage requires SIMD.
+
 ## What we got wrong along the way
 
 1. **"Cache density — fingerprints fit in L2, abseil's don't."** Wrong. M4 with 16MB L2 showed the same advantage. It's cache lines per probe, not cache level.
