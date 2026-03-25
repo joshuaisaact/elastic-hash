@@ -174,4 +174,17 @@ pub fn build(b: *std.Build) void {
     const run_autobench_keylen = b.addRunArtifact(autobench_keylen);
     const autobench_keylen_step = b.step("autobench-keylen", "Run variable key length benchmark");
     autobench_keylen_step.dependOn(&run_autobench_keylen.step);
+
+    // Growth policy overhead test
+    const autobench_growth = b.addExecutable(.{
+        .name = "autobench-growth",
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("src/autobench-growth.zig"),
+            .target = target,
+            .optimize = optimize,
+        }),
+    });
+    const run_autobench_growth = b.addRunArtifact(autobench_growth);
+    const autobench_growth_step = b.step("autobench-growth", "Run growth policy overhead test");
+    autobench_growth_step.dependOn(&run_autobench_growth.step);
 }
