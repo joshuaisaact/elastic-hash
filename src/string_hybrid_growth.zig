@@ -281,39 +281,8 @@ pub const StringElasticHashGrowth = struct {
         self.allocator.free(old_tier_slot_counts);
     }
 
-    /// Find an existing key and update its value. Returns true if found.
-    fn updateExisting(self: *Self, h: u64, key: []const u8, value: u64, fp: u8) bool {
-        const mask = self.tier0_bucket_mask;
-        const bucket_base = h >> self.tier0_bucket_shift;
-
-        // Search tier 0
-        for (0..MAX_PROBES) |probe| {
-            const bucket_idx = (bucket_base +% @as(u64, probe)) & mask;
-            if (self.findKeyInBucket(bucket_idx, key, fp)) |slot| {
-                self.entries[bucket_idx][slot].value = value;
-                return true;
-            }
-            if (matchEmpty(&self.fingerprints[bucket_idx]) != 0) break;
-        }
-
-        // Search tier 1
-        if (self.num_tiers > 1) {
-            const num_buckets = self.tier_bucket_counts[1];
-            const tier_start = self.tier_starts[1];
-            for (0..@min(MAX_PROBES, num_buckets)) |probe| {
-                const abs_idx = tier_start + bucketIndex(h, probe, num_buckets);
-                if (self.findKeyInBucket(abs_idx, key, fp)) |slot| {
-                    self.entries[abs_idx][slot].value = value;
-                    return true;
-                }
-                if (matchEmpty(&self.fingerprints[abs_idx]) != 0) break;
-            }
-        }
-
-        return false;
-    }
-
     /// Insert a key-value pair, updating the value if the key already exists.
+    /// Single-pass: searches for existing key and tracks first empty slot simultaneously.
     pub fn insert(self: *Self, key: []const u8, value: u64) void {
         if (self.needsResize()) {
             self.resize();
@@ -321,10 +290,62 @@ pub const StringElasticHashGrowth = struct {
 
         const h = hash(key);
         const fp = fingerprint(h);
+        const mask = self.tier0_bucket_mask;
+        const bucket_base = h >> self.tier0_bucket_shift;
 
-        // Check for existing key first
-        if (self.updateExisting(h, key, value, fp)) return;
+        // Single pass through tier 0: find existing key OR first empty/tombstone slot
+        var first_empty_bucket: usize = undefined;
+        var first_empty_slot: usize = undefined;
+        var found_empty = false;
 
+        for (0..MAX_PROBES) |probe| {
+            const bucket_idx = (bucket_base +% @as(u64, probe)) & mask;
+
+            // Check for existing key
+            if (self.findKeyInBucket(bucket_idx, key, fp)) |slot| {
+                self.entries[bucket_idx][slot].value = value;
+                return;
+            }
+
+            // Track first available slot
+            if (!found_empty) {
+                if (self.findEmptyOrTombstoneInBucket(bucket_idx)) |slot| {
+                    first_empty_bucket = bucket_idx;
+                    first_empty_slot = slot;
+                    found_empty = true;
+                }
+            }
+
+            // If bucket has empty slots, key can't be further along
+            if (matchEmpty(&self.fingerprints[bucket_idx]) != 0) break;
+        }
+
+        // Key not in tier 0. Check tier 1 before inserting.
+        if (self.num_tiers > 1) {
+            const num_buckets = self.tier_bucket_counts[1];
+            const tier_start = self.tier_starts[1];
+            for (0..@min(MAX_PROBES, num_buckets)) |probe| {
+                const abs_idx = tier_start + bucketIndex(h, probe, num_buckets);
+                if (self.findKeyInBucket(abs_idx, key, fp)) |slot| {
+                    self.entries[abs_idx][slot].value = value;
+                    return;
+                }
+                if (matchEmpty(&self.fingerprints[abs_idx]) != 0) break;
+            }
+        }
+
+        // Key doesn't exist — insert into the first empty slot we found
+        if (found_empty) {
+            self.insertAt(first_empty_bucket, first_empty_slot, key, value, fp);
+            self.tier_slot_counts[0] += 1;
+            self.count += 1;
+            if (self.current_batch == 0 and self.getEmptyFraction(0) <= 0.12) {
+                self.current_batch = 1;
+            }
+            return;
+        }
+
+        // No empty slot found in tier 0 probes — fall back to full insert logic
         self.insertNew(h, fp, key, value);
     }
 
