@@ -233,26 +233,22 @@ struct HashTable {
     bool remove(const char* key, size_t key_len) {
         uint64_t h = hash_key(key, key_len);
         uint8_t fp = fingerprint(h);
+        size_t mask = tier0_bucket_mask;
+        uint64_t bucket_base = h >> tier0_bucket_shift;
 
-        for (size_t t = 0; t < num_tiers; t++) {
-            size_t nb = tier_bucket_counts[t];
-            size_t ts = tier_starts[t];
-            size_t max_p = std::min(MAX_PROBES, nb);
-            for (size_t probe = 0; probe < max_p; probe++) {
-                size_t abs_idx = ts + bucket_index(h, probe, nb);
-                uint16_t fpmask = match_fingerprint(fingerprints[abs_idx], fp);
-                while (fpmask) {
-                    size_t slot = __builtin_ctz(fpmask);
-                    auto& e = entries[abs_idx][slot];
-                    if (e.key_len == key_len && memcmp(e.key_ptr, key, key_len) == 0) {
-                        fingerprints[abs_idx][slot] = TOMBSTONE;
-                        tier_slot_counts[t]--;
-                        count--;
-                        return true;
-                    }
-                    fpmask &= fpmask - 1;
+        // Tier 0 only (matching Zig implementation)
+        for (size_t probe = 0; probe < MAX_PROBES; probe++) {
+            size_t bucket_idx = (bucket_base + probe * (probe + 1) / 2) & mask;
+            uint16_t fpmask = match_fingerprint(fingerprints[bucket_idx], fp);
+            while (fpmask) {
+                size_t slot = __builtin_ctz(fpmask);
+                auto& e = entries[bucket_idx][slot];
+                if (e.key_len == key_len && memcmp(e.key_ptr, key, key_len) == 0) {
+                    fingerprints[bucket_idx][slot] = TOMBSTONE;
+                    count--;
+                    return true;
                 }
-                if (__builtin_expect(match_empty(fingerprints[abs_idx]) != 0, 0)) break;
+                fpmask &= fpmask - 1;
             }
         }
         return false;

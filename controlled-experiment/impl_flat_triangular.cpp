@@ -19,10 +19,9 @@ struct HashTable {
     }
 
     void init(size_t n) {
-        // Flat layout: single array, total capacity = 2x requested (matching elastic's ~2x total)
+        // Flat layout: same capacity as elastic tier 0 (same effective load)
         size_t capacity = 1;
         while (capacity < n) capacity <<= 1;
-        capacity *= 2; // 2x overallocation to match elastic's total capacity across tiers
         bucket_count = std::max(capacity / BUCKET_SIZE, (size_t)1);
 
         fingerprints = (uint8_t(*)[BUCKET_SIZE])calloc(bucket_count, BUCKET_SIZE);
