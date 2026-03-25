@@ -58,6 +58,7 @@ pub const StringElasticHashGrowth = struct {
     tier0_bucket_shift: u6,
     get_overflow_fn: GetOverflowFn,
     max_probe_depth: []u8, // per home-bucket max probe depth in tier 0
+    overflow_bloom: []u8, // per home-bucket bloom filter for displaced elements
 
     // Insert/management fields
     tier_starts: []usize,
@@ -94,17 +95,20 @@ pub const StringElasticHashGrowth = struct {
         const fingerprints = try allocator.alloc([BUCKET_SIZE]u8, total_buckets);
         const entries = try allocator.alloc([BUCKET_SIZE]StringEntry, total_buckets);
         const max_probe_depth = try allocator.alloc(u8, tier0_buckets);
+        const overflow_bloom = try allocator.alloc(u8, tier0_buckets);
 
         for (fingerprints) |*bucket_fps| {
             @memset(bucket_fps, 0);
         }
         @memset(max_probe_depth, 0);
+        @memset(overflow_bloom, 0);
 
         return .{
             .allocator = allocator,
             .fingerprints = fingerprints,
             .entries = entries,
             .max_probe_depth = max_probe_depth,
+            .overflow_bloom = overflow_bloom,
             .tier_starts = tier_starts,
             .tier_bucket_counts = tier_bucket_counts,
             .tier_slot_counts = tier_slot_counts,
@@ -122,6 +126,7 @@ pub const StringElasticHashGrowth = struct {
         self.allocator.free(self.fingerprints);
         self.allocator.free(self.entries);
         self.allocator.free(self.max_probe_depth);
+        self.allocator.free(self.overflow_bloom);
         self.allocator.free(self.tier_starts);
         self.allocator.free(self.tier_bucket_counts);
         self.allocator.free(self.tier_slot_counts);
@@ -138,6 +143,14 @@ pub const StringElasticHashGrowth = struct {
     inline fn fingerprint(h: u64) u8 {
         const fp: u8 = @truncate(h >> 32);
         return if (fp == 0) 1 else if (fp == TOMBSTONE) 0xFE else fp;
+    }
+
+    /// Bloom filter bits derived from the hash. Uses bits 40-47 (independent
+    /// from fingerprint which uses bits 32-39). Sets 2 bits in a byte.
+    inline fn bloomBits(h: u64) u8 {
+        const b1: u3 = @truncate(h >> 40);
+        const b2: u3 = @truncate(h >> 43);
+        return (@as(u8, 1) << b1) | (@as(u8, 1) << b2);
     }
 
     inline fn bucketIndex(h: u64, probe: usize, num_buckets: usize) usize {
@@ -214,7 +227,7 @@ pub const StringElasticHashGrowth = struct {
         const old_tier_bucket_counts = self.tier_bucket_counts;
         const old_tier_slot_counts = self.tier_slot_counts;
         const old_max_probe_depth = self.max_probe_depth;
-
+        const old_overflow_bloom = self.overflow_bloom;
 
         // Double capacity
         const new_capacity = self.capacity * 2;
@@ -239,13 +252,16 @@ pub const StringElasticHashGrowth = struct {
         const new_fps = self.allocator.alloc([BUCKET_SIZE]u8, new_total) catch @panic("alloc");
         const new_entries = self.allocator.alloc([BUCKET_SIZE]StringEntry, new_total) catch @panic("alloc");
         const new_depth = self.allocator.alloc(u8, new_t0_buckets) catch @panic("alloc");
+        const new_bloom = self.allocator.alloc(u8, new_t0_buckets) catch @panic("alloc");
         for (new_fps) |*b| @memset(b, 0);
         @memset(new_depth, 0);
+        @memset(new_bloom, 0);
 
         // Swap in new arrays
         self.fingerprints = new_fps;
         self.entries = new_entries;
         self.max_probe_depth = new_depth;
+        self.overflow_bloom = new_bloom;
         self.tier_starts = new_tier_starts;
         self.tier_bucket_counts = new_tier_bucket_counts;
         self.tier_slot_counts = new_tier_slot_counts;
@@ -276,6 +292,7 @@ pub const StringElasticHashGrowth = struct {
         self.allocator.free(old_fps);
         self.allocator.free(old_entries);
         self.allocator.free(old_max_probe_depth);
+        self.allocator.free(old_overflow_bloom);
         self.allocator.free(old_tier_starts);
         self.allocator.free(old_tier_bucket_counts);
         self.allocator.free(old_tier_slot_counts);
@@ -341,11 +358,14 @@ pub const StringElasticHashGrowth = struct {
             self.insertAt(first_empty_bucket, first_empty_slot, key, value, fp);
             self.tier_slot_counts[0] += 1;
             self.count += 1;
-            // Update max probe depth for this home bucket
             const home_bucket = bucket_base & mask;
+            // Update max probe depth and bloom filter for displaced elements
             const depth: u8 = @intCast(first_empty_probe);
             if (depth > self.max_probe_depth[home_bucket]) {
                 self.max_probe_depth[home_bucket] = depth;
+            }
+            if (first_empty_probe > 0) {
+                self.overflow_bloom[home_bucket] |= bloomBits(h);
             }
             if (self.current_batch == 0 and self.getEmptyFraction(0) <= 0.12) {
                 self.current_batch = 1;
@@ -411,6 +431,9 @@ pub const StringElasticHashGrowth = struct {
                     if (depth > self.max_probe_depth[home_bucket]) {
                         self.max_probe_depth[home_bucket] = depth;
                     }
+                    if (probe > 0) {
+                        self.overflow_bloom[home_bucket] |= bloomBits(h);
+                    }
                 }
                 return;
             }
@@ -433,6 +456,9 @@ pub const StringElasticHashGrowth = struct {
                     const depth: u8 = @intCast(probe);
                     if (depth > self.max_probe_depth[home_bucket]) {
                         self.max_probe_depth[home_bucket] = depth;
+                    }
+                    if (probe > 0) {
+                        self.overflow_bloom[home_bucket] |= bloomBits(h);
                     }
                 }
                 return true;
@@ -526,6 +552,7 @@ pub const StringElasticHashGrowth = struct {
             sc.* = 0;
         }
         @memset(self.max_probe_depth, 0);
+        @memset(self.overflow_bloom, 0);
         self.count = 0;
         self.current_batch = 0;
     }
