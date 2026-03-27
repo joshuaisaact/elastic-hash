@@ -6,7 +6,7 @@ A hash table based on the 2025 paper "Optimal Bounds for Open Addressing Without
 
 ## The bottom line
 
-In languages with SIMD support (C++, Zig, Rust), elastic hash is **1.7x faster on hit lookups** and **2.6x faster on inserts** than Google's abseil `flat_hash_map` (SwissTable). In Go (no SIMD), it's 1.5x slower on lookups but still 1.8x faster on inserts. Miss lookups are roughly tied with abseil in C++/Zig.
+Elastic hash is **1.7x faster on hit lookups** and **2.6x faster on inserts** than Google's abseil `flat_hash_map` (SwissTable). Verified in both C++ (same compiler as abseil) and Zig. Miss lookups are roughly tied with abseil at moderate load.
 
 ## What makes it faster (and what doesn't)
 
@@ -55,10 +55,6 @@ In languages with SIMD support (C++, Zig, Rust), elastic hash is **1.7x faster o
 | Miss lookup | 49,150us | 24,200us | **2.03x slower** |
 | Insert | 14,500us | 25,400us | **1.75x faster** |
 | Delete | 9,900us | 13,200us | **1.33x faster** |
-
-## Why Go is different
-
-Go doesn't expose SIMD intrinsics. The 16-byte fingerprint matching loop compiles to scalar code. cockroachdb/swiss.Map uses hand-optimized Go assembly for its hot paths. Without SIMD, the fingerprint scanning that makes elastic hash fast in C++/Zig becomes its bottleneck.
 
 ## Performance across table sizes (C++ elastic vs abseil, unshuffled hits)
 
@@ -125,19 +121,6 @@ With the growth policy, the production-ready version (`string_hybrid_growth.zig`
 - **Duplicate keys:** insert checks for existing key and updates value instead of creating a second entry
 - **Automatic resize:** doubles capacity when load exceeds 87.5%, rehashes all elements
 
-## Go comparison
-
-Same algorithm in Go (no SIMD) vs cockroachdb/swiss.Map (shuffled, 1M, 50% load):
-
-| Operation | Elastic Go | swiss.Map | Ratio |
-|---|---|---|---|
-| Hit lookup | 52,600us | 31,600us | **1.66x slower** |
-| Miss lookup | 49,150us | 24,200us | **2.03x slower** |
-| Insert | 14,500us | 25,400us | **1.75x faster** |
-| Delete | 9,900us | 13,200us | **1.33x faster** |
-
-Without SIMD, the scalar fingerprint matching loop is the bottleneck. The lookup advantage requires SIMD.
-
 ## What we got wrong along the way
 
 1. **"Cache density — fingerprints fit in L2, abseil's don't."** Wrong. M4 with 16MB L2 showed the same advantage. It's cache lines per probe, not cache level.
@@ -153,8 +136,6 @@ Without SIMD, the scalar fingerprint matching loop is the bottleneck. The lookup
 ## So what
 
 **If you use C++, Zig, or Rust** and need a hash table for read-heavy or write-heavy workloads at moderate load factors (10-75%), this implementation is meaningfully faster than abseil. 1.7x on lookups and 2.6x on inserts is real and verified.
-
-**If you use Go**, the insert advantage transfers but lookups are slower without SIMD. Use swiss.Map for read-heavy workloads.
 
 **The portable insight** is the cold-hinted early termination. Any SIMD hash table (including abseil forks) can add `matchEmpty` with a cold branch hint to improve miss performance without regressing hits. This is a one-line optimization that works in any language with branch prediction hints.
 
