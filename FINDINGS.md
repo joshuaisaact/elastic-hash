@@ -58,30 +58,30 @@ Elastic hash is **1.7x faster on hit lookups** and **2.6x faster on inserts** th
 
 ## Performance across table sizes (C++ elastic vs abseil, unshuffled, 50% load)
 
-Tested on Apple M4 with same g++ compiler.
+Tested on Apple M4 with same g++ compiler. Clean sequential runs.
 
-| Size | Elastic C++ hit | Abseil hit | Ratio |
-|---|---|---|---|
-| 16K | 109us | 29us | **abseil 3.8x faster** |
-| 64K | 173us | 161us | ~tied |
-| 256K | 503us | 1,482us | **elastic 2.9x faster** |
-| 1M | 5,918us | 9,555us | **elastic 1.6x faster** |
-| 4M | 37,914us | 47,360us | **elastic 1.2x faster** |
+| Size | Elastic C++ hit | Abseil hit | Hit ratio | Elastic miss | Abseil miss | Miss ratio |
+|---|---|---|---|---|---|---|
+| 16K | 26us | 30us | ~tied | 22us | 23us | ~tied |
+| 64K | 110us | 164us | **1.5x faster** | 92us | 108us | **1.2x faster** |
+| 256K | 493us | 2,150us | **4.4x faster** | 408us | 660us | **1.6x faster** |
+| 1M | 5,684us | 9,570us | **1.7x faster** | 3,122us | 3,258us | ~tied |
+| 4M | 37,817us | 49,888us | **1.3x faster** | 18,160us | 27,430us | **1.5x faster** |
 
-Abseil wins at small sizes (<64K) where everything fits in L1 and tier overhead dominates. Elastic hash advantage starts at 256K and peaks at 256K-1M. Sweet spot is 256K-4M.
+Elastic hash is faster or tied at every size from 16K to 4M on hits. Peak advantage is 256K (4.4x).
 
-## Performance across load factors (C++ elastic vs abseil)
+## Performance across load factors (C++ elastic vs abseil, unshuffled, 1M)
 
-| Load | Hit advantage | Miss advantage | Insert advantage |
-|---|---|---|---|
-| 10% | ~1.7x | ~1.4x | ~2.8x |
-| 25% | ~1.7x | ~tied | ~2.6x |
-| 50% | **1.7x** | **tied** | **2.6x** |
-| 75% | ~1.5x | abseil wins | ~2x |
-| 90% | ~1.3x | abseil wins | ~1.5x |
-| 99% | ~tied | abseil wins | ~1.3x |
+| Load | Elastic hit | Abseil hit | Hit ratio | Elastic miss | Abseil miss | Miss ratio |
+|---|---|---|---|---|---|---|
+| 10% | 419us | 1,734us | **4.1x faster** | 315us | 394us | **1.3x faster** |
+| 25% | 1,898us | 4,743us | **2.5x faster** | 993us | 1,454us | **1.5x faster** |
+| 50% | 5,684us | 9,570us | **1.7x faster** | 3,122us | 3,258us | ~tied |
+| 75% | 10,704us | 14,157us | **1.3x faster** | 9,397us | 5,817us | **abseil 1.6x faster** |
+| 90% | 15,333us | 17,781us | **1.2x faster** | 25,355us | 7,979us | **abseil 3.2x faster** |
+| 99% | 19,791us | 19,263us | ~tied | 36,306us | 9,319us | **abseil 3.9x faster** |
 
-The hit advantage degrades at high load because tier 0 fills up and more probes are needed. Miss advantage disappears above 50% because fewer empty slots means the early termination can't help. Insert advantage degrades because the batch insertion logic kicks in.
+Elastic hash wins on hits at every load factor up to 90%. Miss advantage disappears above 50% because fewer empty slots means `matchEmpty` can't terminate early. At 75%+ abseil's miss performance is 1.6-3.9x faster.
 
 ## Cross-architecture results
 
@@ -132,6 +132,8 @@ With the growth policy, the production-ready version (`string_hybrid_growth.zig`
 4. **"Elastic hash is 3-5x faster on inserts because of the tiered architecture."** Misleading. The insert advantage comes from simpler code paths (no growth policy, no rehash checks), not from the tiered layout. Abseil's insert overhead is abseil-specific.
 
 5. **"Flat tables with 2x capacity is a fair comparison."** Wrong. This halved the effective load factor, invalidating the controlled experiment. Caught and fixed.
+
+6. **"Abseil is 3.8x faster at 16K."** Wrong. An earlier run with machine contention produced bad data. Clean sequential runs show they're tied at 16K.
 
 ## So what
 
