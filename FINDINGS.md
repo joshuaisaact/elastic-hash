@@ -56,19 +56,19 @@ Elastic hash is **1.7x faster on hit lookups** and **2.6x faster on inserts** th
 | Insert | 14,500us | 25,400us | **1.75x faster** |
 | Delete | 9,900us | 13,200us | **1.33x faster** |
 
-## Performance across table sizes (C++ elastic vs abseil, unshuffled hits)
+## Performance across table sizes (C++ elastic vs abseil, unshuffled, 50% load)
 
-Tested on Apple M4. The advantage holds from 16K to 4M elements.
+Tested on Apple M4 with same g++ compiler.
 
-| Size | Advantage vs abseil |
-|---|---|
-| 16K | Small tables — both fast, elastic slightly ahead |
-| 64K | ~1.3x |
-| 256K | ~1.5x |
-| 1M | **1.7x** |
-| 4M | ~1.5x |
+| Size | Elastic C++ hit | Abseil hit | Ratio |
+|---|---|---|---|
+| 16K | 109us | 29us | **abseil 3.8x faster** |
+| 64K | 173us | 161us | ~tied |
+| 256K | 503us | 1,482us | **elastic 2.9x faster** |
+| 1M | 5,918us | 9,555us | **elastic 1.6x faster** |
+| 4M | 37,914us | 47,360us | **elastic 1.2x faster** |
 
-Sweet spot is 256K-1M. Advantage is present but smaller at extremes.
+Abseil wins at small sizes (<64K) where everything fits in L1 and tier overhead dominates. Elastic hash advantage starts at 256K and peaks at 256K-1M. Sweet spot is 256K-4M.
 
 ## Performance across load factors (C++ elastic vs abseil)
 

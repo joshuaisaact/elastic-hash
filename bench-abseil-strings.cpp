@@ -115,9 +115,12 @@ int main() {
     fprintf(stderr, "\n=== Abseil string_view Benchmark (median of %d, %d warmup, %zu-byte keys) ===\n\n",
             MEASURED, WARMUP, KEY_LEN);
 
-    constexpr size_t sizes[] = {16384, 65536, 262144, 1048576};
+    constexpr size_t sizes[] = {16384, 65536, 262144, 1048576, 4194304};
     for (size_t n : sizes) {
         bench(n, n * 99 / 100, 99);
+    }
+    for (size_t n : sizes) {
+        bench(n, n * 50 / 100, 50);
     }
 
     constexpr int pcts[] = {10, 25, 50, 75, 90};
