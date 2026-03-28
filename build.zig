@@ -175,6 +175,39 @@ pub fn build(b: *std.Build) void {
     const autobench_keylen_step = b.step("autobench-keylen", "Run variable key length benchmark");
     autobench_keylen_step.dependOn(&run_autobench_keylen.step);
 
+    // Flat hash tests
+    const flat_tests = b.addTest(.{
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("src/flat_hash.zig"),
+            .target = target,
+            .optimize = optimize,
+        }),
+    });
+    test_step.dependOn(&b.addRunArtifact(flat_tests).step);
+
+    // Flat vs tiered benchmark
+    const bench_flat = b.addExecutable(.{
+        .name = "bench-flat-vs-tiered",
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("src/bench_flat_vs_tiered.zig"),
+            .target = target,
+            .optimize = optimize,
+        }),
+    });
+    const run_bench_flat = b.addRunArtifact(bench_flat);
+    const bench_flat_step = b.step("bench-flat", "Run flat vs tiered benchmark");
+    bench_flat_step.dependOn(&run_bench_flat.step);
+
+    // String hybrid growth tests
+    const growth_tests = b.addTest(.{
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("src/string_hybrid_growth.zig"),
+            .target = target,
+            .optimize = optimize,
+        }),
+    });
+    test_step.dependOn(&b.addRunArtifact(growth_tests).step);
+
     // Growth policy overhead test
     const autobench_growth = b.addExecutable(.{
         .name = "autobench-growth",
