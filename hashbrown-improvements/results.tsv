@@ -1,0 +1,20 @@
+commit	cycles_M	ipc	l1_misses_M	status	description
+18b8242	841	0.68	26.4	keep	baseline: ctrl+data prefetch in find()
+a8600e1	744	0.75	20.9	keep	inline get(): bypass find_inner/Bucket indirection, direct pointer math
+-	820	0.72	20.5	discard	prefetch first match data after SIMD compare (extra branch hurts)
+-	800	0.66	29.7	discard	no prefetches at all (more L1 misses)
+-	804	0.66	26.2	discard	ctrl-only prefetch (data prefetch at pos is valuable)
+-	780	0.71	20.9	discard	unroll first probe group with lowest_set_bit (more branches, worse codegen)
+ef531f3	737	0.76	20.9	keep	raw bitmask ops (tzcnt+blsr) instead of BitMaskIter
+-	797	0.71	18.4	discard	double data prefetch (fewer L1 misses but more instructions)
+-	769	0.72	20.9	discard	precompute match_empty before match loop (no improvement, more variance)
+-	752	0.74	21.0	discard	raw SIMD intrinsics instead of Group abstraction (same codegen)
+107db3e	741	0.74	21.0	discard	force-inline make_hash (8M fewer instrs but reg spills in hot loop)
+-	747	0.74	20.9	discard	force-inline entire get chain (was already inlined by LLVM)
+af1268a	734	0.76	20.9	keep	revert make_hash inline, removes register spill from hot loop
+-	737	0.77	20.6	discard	prefetch match data + interleave empty check (too late for prefetch)
+-	747	0.76	21.1	discard	NTA ctrl prefetch (higher latency from streaming buffer)
+-	734	0.76	23.8	discard	T1 (L2) ctrl prefetch (neutral: more L1 misses, same cycles)
+-	735	0.76	21.0	discard	prefetch inside loop (no effect, compiler handles it)
+-	748	0.76	20.9	discard	unreachable hint for bucket_mask (no effect)
+-	775	0.72	22.4	discard	offset data prefetch at pos+4 (misses actual match position)

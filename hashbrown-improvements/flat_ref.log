@@ -1,0 +1,12 @@
+
+ Performance counter stats for 'target/release/perf_flat':
+
+       787,012,200      cpu_core/cycles/u                                                     
+       748,435,689      cpu_core/instructions/u                                               
+
+       0.162610811 seconds time elapsed
+
+       0.155054000 seconds user
+       0.007005000 seconds sys
+
+
