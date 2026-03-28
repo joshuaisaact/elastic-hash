@@ -1213,12 +1213,46 @@ impl<T, A: Allocator> RawTable<T, A> {
     }
 
     /// Gets a reference to an element in the table.
-    #[inline]
-    pub fn get(&self, hash: u64, eq: impl FnMut(&T) -> bool) -> Option<&T> {
-        // Avoid `Option::map` because it bloats LLVM IR.
-        match self.find(hash, eq) {
-            Some(bucket) => Some(unsafe { bucket.as_ref() }),
-            None => None,
+    /// Fully inlined hot path -- no closure, no Bucket indirection, no find_inner call.
+    #[inline(always)]
+    pub fn get(&self, hash: u64, mut eq: impl FnMut(&T) -> bool) -> Option<&T> {
+        unsafe {
+            let bucket_mask = self.table.bucket_mask;
+            let ctrl_base = self.table.ctrl.as_ptr();
+            let data_base = self.data_end().as_ptr(); // points past T0
+            let tag_hash = Tag::full(hash);
+
+            let mut pos = h1(hash) & bucket_mask;
+            let mut stride: usize = 0;
+
+            #[cfg(target_arch = "x86_64")]
+            {
+                let ctrl_ptr = ctrl_base.add(pos) as *const i8;
+                core::arch::x86_64::_mm_prefetch(ctrl_ptr, core::arch::x86_64::_MM_HINT_T0);
+                if !T::IS_ZERO_SIZED {
+                    let data_ptr = data_base.sub(pos + 1) as *const i8;
+                    core::arch::x86_64::_mm_prefetch(data_ptr, core::arch::x86_64::_MM_HINT_T0);
+                }
+            }
+
+            loop {
+                let group = Group::load(ctrl_base.add(pos).cast());
+
+                for bit in group.match_tag(tag_hash) {
+                    let index = (pos + bit) & bucket_mask;
+                    let element = &*data_base.sub(index + 1);
+                    if likely(eq(element)) {
+                        return Some(element);
+                    }
+                }
+
+                if likely(group.match_empty().any_bit_set()) {
+                    return None;
+                }
+
+                stride += Group::WIDTH;
+                pos = (pos + stride) & bucket_mask;
+            }
         }
     }
 
