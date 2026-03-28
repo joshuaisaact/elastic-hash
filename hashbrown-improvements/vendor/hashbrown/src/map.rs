@@ -1326,6 +1326,39 @@ where
         }
     }
 
+    /// Look up 4 keys at once, interleaving prefetches to hide memory latency.
+    /// Returns [Option<&V>; 4] for each key.
+    #[inline]
+    pub fn get_batch_4<Q>(&self, keys: [&Q; 4]) -> [Option<&V>; 4]
+    where
+        Q: Hash + Equivalent<K> + ?Sized,
+    {
+        if self.table.is_empty() {
+            return [None, None, None, None];
+        }
+        // Phase 1: hash all keys and prefetch ctrl+data for all 4
+        let hashes = [
+            make_hash::<Q, S>(&self.hash_builder, keys[0]),
+            make_hash::<Q, S>(&self.hash_builder, keys[1]),
+            make_hash::<Q, S>(&self.hash_builder, keys[2]),
+            make_hash::<Q, S>(&self.hash_builder, keys[3]),
+        ];
+        self.table.prefetch(hashes[0]);
+        self.table.prefetch(hashes[1]);
+        self.table.prefetch(hashes[2]);
+        self.table.prefetch(hashes[3]);
+
+        // Phase 2: look up each key (prefetches have had time from the other hashes + prefetches)
+        let mut results: [Option<&V>; 4] = [None, None, None, None];
+        for i in 0..4 {
+            results[i] = match self.table.get(hashes[i], equivalent_key(keys[i])) {
+                Some((_, v)) => Some(v),
+                None => None,
+            };
+        }
+        results
+    }
+
     /// Returns the key-value pair corresponding to the supplied key.
     ///
     /// The supplied key may be any borrowed form of the map's key type, but
