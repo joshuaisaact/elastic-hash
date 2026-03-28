@@ -60,21 +60,41 @@ The "sweet spot is 500K-2M" claim from verify-results.md does not hold on this m
 
 **Hypothesis:** Tier overflow (2.7% of elements in tier 1+) should cause worse tail latency.
 
-**Result: Attack succeeded.** This is elastic hash's real weakness.
+**Result: Attack succeeded.** This is elastic hash's real weakness. Verified with 500K samples, best-of-5 runs.
 
-| Percentile | Elastic (cycles) | Abseil (cycles) | Ratio |
-|-----------|-----------------|-----------------|-------|
-| p50 | 20 | 20 | tied |
-| p90 | 20 | 22 | tied |
-| p99 | 398 | 28 | **abseil 14x better** |
-| p99.9 | 939 | 598 | abseil 1.6x better |
-| max | 12,722 | 41,176 | elastic better |
+### Hit latency (cycles, 1M table, string keys)
 
-At p99, elastic hash is **14x worse** than abseil. This is the tier overflow cost: ~2.7% of elements live in tier 1+ and require scanning all 7 tier-0 probes before falling through to the overflow path. For latency-sensitive applications (trading systems, game servers, real-time pipelines), this is disqualifying.
+| Load | | p50 | p90 | p95 | p99 | p99.9 |
+|------|--------|-----|-----|-----|-----|-------|
+| 25% | Elastic | 20 | 20 | 21 | 91 | 425 |
+| 25% | Abseil | 21 | 22 | 23 | 38 | 550 |
+| 25% | **Ratio** | 1.05x faster | 1.1x faster | 1.1x faster | **2.4x worse** | 1.3x better |
+| 50% | Elastic | 20 | 20 | 21 | 247 | 619 |
+| 50% | Abseil | 21 | 22 | 23 | 24 | 755 |
+| 50% | **Ratio** | 1.05x faster | 1.1x faster | 1.1x faster | **10.3x worse** | 1.2x better |
+| 75% | Elastic | 19 | 21 | 85 | 804 | 1,915 |
+| 75% | Abseil | 21 | 22 | 23 | 37 | 958 |
+| 75% | **Ratio** | 1.1x faster | 1.05x faster | **3.7x worse** | **21.7x worse** | 2.0x worse |
+| 99% | Elastic | 19 | 229 | 376 | 767 | 1,666 |
+| 99% | Abseil | 21 | 22 | 23 | 37 | 1,031 |
+| 99% | **Ratio** | 1.1x faster | **10.4x worse** | **16.3x worse** | **20.7x worse** | 1.6x worse |
 
-Abseil's p99 is only 28 cycles because all elements live at predictable probe positions -- no tier overflow, no structural penalty for unlucky elements.
+The pattern is clear: elastic hash's **median** latency is slightly better (19-20 vs 21 cycles), but the **tail** degrades rapidly with load because more elements overflow to tier 1+. At 99% load, even p90 is 10.4x worse.
 
-**Verdict: Disproved for latency-sensitive workloads. Elastic hash trades tail latency for throughput.**
+### Miss latency (cycles)
+
+| Load | | p50 | p99 |
+|------|--------|-----|-----|
+| 50% | Elastic | 18 | 178 |
+| 50% | Abseil | 18 | 543 |
+| 50% | **Ratio** | tied | **elastic 3x better** |
+| 99% | Elastic | 255 | 1,312 |
+| 99% | Abseil | 18 | 645 |
+| 99% | **Ratio** | **14.2x worse** | **2.0x worse** |
+
+Miss latency reverses at high load: elastic's early termination (matchEmpty) helps at low load but can't fire when there are few empty slots.
+
+**Verdict: Disproved for latency-sensitive workloads. Elastic hash trades tail latency for throughput. At 75%+ load, p99 hit latency is 20x worse than abseil. At 99% load, even p90 is 10x worse.**
 
 ---
 
@@ -193,7 +213,7 @@ Compare to abseil at same settings: ~22,000us. The ~2x advantage comes entirely 
 
 2. **The headline numbers are inflated by string keys.** With u64 keys (cheap comparison), the hit advantage drops from 2.09x to 1.36x at 1M/50%, and to 0-4% at small sizes. The verify-results.md figure of "15-20% at 1M/50%" was more honest than the current FINDINGS.md headline of "1.7x."
 
-3. **Tail latency is disqualifying for latency-sensitive workloads.** p99 is 14x worse than abseil (398 vs 28 cycles). The 2.7% of elements in tier 1+ create an unavoidable penalty. This is inherent to the tiered design.
+3. **Tail latency is disqualifying for latency-sensitive workloads.** p99 hit latency is 10-21x worse than abseil depending on load (verified: 500K samples, best-of-5 runs). At 99% load, even p90 is 10.4x worse. The tier overflow penalty is unavoidable and worsens with load factor.
 
 4. **Miss lookups remain a weakness at high load (90%+).** abseil is 1.4-2.8x faster on misses at 90-99% load across all key types.
 
@@ -201,4 +221,4 @@ Compare to abseil at same settings: ~22,000us. The ~2x advantage comes entirely 
 
 ### What a fair claim looks like
 
-"A hash table with separated fingerprint metadata (no tiers needed) is 1.3-2.4x faster than abseil on hit lookups for string keys, and 0-36% faster for integer keys at sizes above 256K. Insert and delete operations are 2-3x faster due to simpler code paths. Trade-off: p99 tail latency is 14x worse due to tier overflow, and miss lookups are slower at 90%+ load."
+"A hash table with separated fingerprint metadata (no tiers needed) is 1.3-2.4x faster than abseil on hit lookups for string keys, and 0-36% faster for integer keys at sizes above 256K. Insert and delete operations are 2-3x faster due to simpler code paths. Trade-offs: p99 hit latency is 10-21x worse due to tier overflow (disqualifying for latency-sensitive applications), and miss lookups are slower at 90%+ load. The tiered structure from the paper adds complexity without improving average-case performance."
