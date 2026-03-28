@@ -1679,7 +1679,7 @@ impl RawTableInner {
     unsafe fn find_or_find_insert_slot_inner(
         &self,
         hash: u64,
-        eq: &mut dyn FnMut(usize) -> bool,
+        eq: &mut impl FnMut(usize) -> bool,
     ) -> Result<usize, InsertSlot> {
         let mut insert_slot = None;
 
@@ -1892,7 +1892,7 @@ impl RawTableInner {
     ///
     /// [`undefined behavior`]: https://doc.rust-lang.org/reference/behavior-considered-undefined.html
     #[inline(always)]
-    unsafe fn find_inner(&self, hash: u64, eq: &mut dyn FnMut(usize) -> bool) -> Option<usize> {
+    unsafe fn find_inner(&self, hash: u64, eq: &mut impl FnMut(usize) -> bool) -> Option<usize> {
         let tag_hash = Tag::full(hash);
         let mut probe_seq = self.probe_seq(hash);
 
