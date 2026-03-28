@@ -1,0 +1,14 @@
+
+=== String-key Benchmark (median of 10, 2 warmup, 16-byte keys) ===
+
+RESULT	n=16384	load=99	insert_us=95	lookup_us=59	delete_us=20	miss_us=194
+RESULT	n=65536	load=99	insert_us=508	lookup_us=443	delete_us=100	miss_us=969
+RESULT	n=262144	load=99	insert_us=4397	lookup_us=5451	delete_us=1702	miss_us=16700
+RESULT	n=1048576	load=99	insert_us=12993	lookup_us=19491	delete_us=6227	miss_us=52519
+RESULT	n=1048576	load=10	insert_us=3346	lookup_us=1065	delete_us=571	miss_us=1441
+RESULT	n=1048576	load=25	insert_us=4330	lookup_us=4056	delete_us=1859	miss_us=9231
+RESULT	n=1048576	load=50	insert_us=6071	lookup_us=8404	delete_us=3230	miss_us=20115
+RESULT	n=1048576	load=75	insert_us=8259	lookup_us=16557	delete_us=6492	miss_us=48073
+RESULT	n=1048576	load=90	insert_us=10017	lookup_us=15913	delete_us=5972	miss_us=46382
+
+DONE

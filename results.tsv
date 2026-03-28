@@ -1,0 +1,64 @@
+commit	lookup_ratio_1M	insert_ratio_1M	delete_ratio_1M	status	description
+a4a2c7a	0.176	2.972	0.339	revert	tier-first search order - massive regression, exhausted tier 0 probes before checking other tiers
+330ddb6	0.823	2.900	0.330	revert	cross-tier prefetching - extra prefetches hurt performance
+f9fc247	1.258	2.883	0.340	keep	remove all prefetching from get() - 21% improvement, prefetch was polluting cache
+18b4ce8	1.146	2.899	0.343	revert	tier-0 fast path - extra branch in inner loop hurt more than fast path helped
+c35df86	1.542	2.881	0.448	keep	reduce MAX_PROBES 100->32, compiler generates tighter loop
+b48b0a3	1.724	2.902	0.500	keep	reduce MAX_PROBES 32->24, even tighter loop
+6bbdd09	1.903	2.873	0.570	keep	reduce MAX_PROBES 24->20
+n/a	n/a	n/a	n/a	crash	MAX_PROBES=18 fails 99% load test
+6ca9ddc	2.486	2.932	0.532	keep	cap get() to 8 tiers - eliminates checking tiny late tiers
+d42e9ee	2.420	2.921	0.529	revert	6 tiers too aggressive, elements in tiers 6-7 not found
+9530f6c	2.337	2.443	0.541	revert	fixed arrays for tier metadata - struct too large, cache regression
+907f4f8	2.349	2.876	0.520	revert	splitmix64 hash slower than wyhash 128-bit multiply
+bbf67f0	2.685	3.012	0.589	keep	linear probing - consecutive probes use same cache lines
+6e5b3dc	2.146	2.982	0.535	revert	early exit on empty slots - extra SIMD op per bucket too expensive
+5f62379	2.218	2.723	0.555	revert	combined SIMD early exit - bitmask overhead in inner loop too costly
+6f57a0a	2.986	3.009	1.270	keep	double tier 0 size - most elements stay in tier 0
+f7328f9	3.077	2.638	0.849	revert	4x tier 0 - insert regressed 12% beyond 5% threshold
+710938e	3.339	3.049	1.484	keep	reduce MAX_LOOKUP_TIERS to 4 with larger tier 0
+3d427e3	3.484	3.027	1.482	keep	reduce MAX_LOOKUP_TIERS to 3
+6188a77	3.498	3.015	1.403	keep	reduce MAX_LOOKUP_TIERS to 2
+c9ea0fe	3.560	3.000	1.723	keep	MAX_LOOKUP_TIERS=1, tier 0 only
+8c9b749	3.241	3.016	1.422	revert	simplified get() - runtime loop bound prevents compiler optimization
+a4c6c90	3.448	2.943	1.307	revert	inline for unroll - instruction cache pressure from 20 copies
+4841fba	3.660	3.071	1.398	keep	MAX_PROBES 20->10 with larger tier 0
+4260bd4	4.308	3.027	1.799	keep	MAX_PROBES 10->8
+004b0b7	4.280	3.041	1.652	revert	MAX_PROBES=6 marginal regression from 8
+2f6f0b8	4.343	3.090	2.006	revert	BUCKET_SIZE=32 within noise, adds complexity
+784e8ca	4.173	3.020	1.874	revert	quadratic probing within noise of linear
+6f15cd3	3.979	2.592	1.817	revert	inline for 8 probes still worse than while loop
+n/a	n/a	n/a	n/a	crash	forced tier-0 insert fails at 99% load - probe depth exceeds MAX_PROBES
+dd36b35	4.354	3.073	1.933	keep	simplified tier-0-only get() with comptime loop bound, less code
+e070ea9	4.366	3.035	1.873	keep	removed insert prefetch, simpler code
+9ab9cc0	4.371	3.148	1.962	keep	delayed batch transition 75%->90%, more elements in tier 0
+n/a	n/a	n/a	n/a	crash	tier-0-only insert fails - probe depth exceeds MAX_PROBES at small n
+ace8f81	4.253	3.160	1.889	keep	limit insert probe depth to MAX_PROBES, aligns insert with lookup
+4a423da	3.331	2.697	1.029	revert	4x tier 0 too large, fingerprints don't fit in cache at 1M
+bd6cd0b	4.327	3.140	2.040	keep	batch threshold 0.08 (92% fill), more in tier 0
+c6a1a44	4.425	3.257	1.782	keep	optimized remove() to tier-0 only
+5b88308	4.352	3.224	1.790	keep	simpler 64-bit hash, same performance, less code
+56af0b9	4.518	2.911	1.940	keep	single-multiply hash - 7% lookup improvement, simpler
+97c8fa3	3.406	3.241	1.258	revert	noinline findKeyInBucket adds call overhead per bucket
+532520f	4.654	3.147	1.712	keep	fast path for single FP match, avoids loop
+2ae4de7	4.651	3.212	1.850	keep	cached tier0 metadata in struct fields
+022c478	5.005	3.232	1.827	keep	hardcode tier0_start=0, one less add on critical path
+6f82228	4.746	3.214	1.882	keep	removed unused tier0_start field
+7ab6486	5.041	3.204	2.069	revert	MAX_PROBES=6 within noise of 8
+c9e700c	4.986	3.327	1.886	keep	cached bucket mask, marginal improvement
+740bc74	5.167	2.592	1.937	revert	key prefetch hurt insert ratio despite only changing get()
+n/a	n/a	n/a	n/a	crash	fingerprint |1 can produce 0xFF tombstone
+bfd53c3	4.793	3.245	2.052	revert	7-bit fingerprint has higher FP rate, more key comparisons
+23f2a59	5.058	3.247	2.026	keep	reorder struct fields for cache line alignment
+37c7627	4.681	3.223	2.058	revert	inline for still worse than while loop
+n/a	n/a	n/a	n/a	crash	MAX_PROBES=4 fails high load test
+90f051a	5.131	3.165	1.841	keep	fingerprint from bits 32-39 reduces FP/bucket correlation
+45de2ab	4.817	3.213	1.880	revert	bits 24-31 for fp worse than 32-39
+b3fdcef	5.160	3.297	2.196	keep	fast path check slot 0 directly
+e4a3802	5.483	3.405	1.928	keep	separate probe 0 avoids loop entry for common case
+bb13814	4.971	3.201	1.743	revert	unrolling probe 1 adds code without enough hits
+53ffd0a	5.035	3.230	1.919	revert	value prefetch wastes bandwidth on probe 0 miss
+e22f93b	5.101	2.668	1.762	revert	branchless fp clamp regresses insert
+6600b40	4.799	3.315	1.705	revert	0.06 threshold - higher fill increases probe depth
+28eded4	5.601	3.201	2.035	keep	batch threshold 0.12 - lower fill in tier 0 reduces probe depth
+4e2f019	5.345	3.237	1.904	revert	0.15 worse than 0.12
