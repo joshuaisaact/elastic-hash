@@ -236,7 +236,7 @@ where
 }
 
 #[cfg(not(feature = "nightly"))]
-#[inline(always)]
+#[cfg_attr(feature = "inline-more", inline)]
 pub(crate) fn make_hash<Q, S>(hash_builder: &S, val: &Q) -> u64
 where
     Q: Hash + ?Sized,
