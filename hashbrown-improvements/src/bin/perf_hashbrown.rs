@@ -36,21 +36,8 @@ fn main() {
     for i in 0..fill { black_box(map.get(&keys[order[i]] as &[u8])); }
 
     // MEASURED: 10 rounds of hit lookups only
-    // Process 4 lookups at a time to maximize memory-level parallelism.
     for _ in 0..10 {
-        let chunks = fill / 4;
-        for c in 0..chunks {
-            let base = c * 4;
-            let results = map.get_batch_4([
-                &keys[order[base]] as &[u8],
-                &keys[order[base + 1]] as &[u8],
-                &keys[order[base + 2]] as &[u8],
-                &keys[order[base + 3]] as &[u8],
-            ]);
-            black_box(results);
-        }
-        // Handle remainder
-        for i in (chunks * 4)..fill {
+        for i in 0..fill {
             black_box(map.get(&keys[order[i]] as &[u8]));
         }
     }
