@@ -1226,16 +1226,6 @@ impl<T, A: Allocator> RawTable<T, A> {
             let mut pos = h1(hash) & bucket_mask;
             let mut stride: usize = 0;
 
-            #[cfg(target_arch = "x86_64")]
-            {
-                let ctrl_ptr = ctrl_base.add(pos) as *const i8;
-                core::arch::x86_64::_mm_prefetch(ctrl_ptr, core::arch::x86_64::_MM_HINT_T0);
-                if !T::IS_ZERO_SIZED {
-                    let data_ptr = data_base.sub(pos + 1) as *const i8;
-                    core::arch::x86_64::_mm_prefetch(data_ptr, core::arch::x86_64::_MM_HINT_T0);
-                }
-            }
-
             loop {
                 let group = Group::load(ctrl_base.add(pos).cast());
                 let mut bits = group.match_tag(tag_hash).0; // raw u16 bitmask
