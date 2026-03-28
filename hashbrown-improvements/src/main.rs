@@ -1,17 +1,15 @@
-mod flat_hash;
-
+/// Benchmark: hashbrown with vs without entry prefetch.
+/// Run with vendored hashbrown (has prefetch) and without (crates.io original).
 use std::collections::HashMap;
 use std::hash::BuildHasherDefault;
 use std::hint::black_box;
 use std::time::Instant;
 use ahash::AHasher;
-use flat_hash::{FlatHash, Probing};
 
 type AHashBuilder = BuildHasherDefault<AHasher>;
 
 const KEY_SEED: u64 = 0xDEADBEEF12345678;
 const MISS_SEED: u64 = 0xCAFEBABE87654321;
-const RUNS_PER_CONFIG: usize = 3;
 const WARMUP: usize = 2;
 const MEASURED: usize = 10;
 const TOTAL_RUNS: usize = WARMUP + MEASURED;
@@ -27,26 +25,16 @@ fn splitmix64(state: &mut u64) -> u64 {
 const HEX: &[u8; 16] = b"0123456789abcdef";
 fn u64_to_hex(val: u64, buf: &mut [u8; 16]) {
     let mut v = val;
-    for i in (0..16).rev() {
-        buf[i] = HEX[(v & 0xF) as usize];
-        v >>= 4;
-    }
+    for i in (0..16).rev() { buf[i] = HEX[(v & 0xF) as usize]; v >>= 4; }
 }
 
-fn median(arr: &mut [u64]) -> u64 {
-    arr.sort();
-    arr[arr.len() / 2]
-}
+fn median(arr: &mut [u64]) -> u64 { arr.sort(); arr[arr.len() / 2] }
 
-/// Flush cache by allocating and touching a large buffer
 fn flush_cache() {
-    let size = 64 * 1024 * 1024; // 64MB > L3
+    let size = 64 * 1024 * 1024;
     let mut buf = vec![0u8; size];
-    for i in (0..size).step_by(64) {
-        buf[i] = (i & 0xFF) as u8;
-    }
+    for i in (0..size).step_by(64) { buf[i] = (i & 0xFF) as u8; }
     black_box(&buf);
-    drop(buf);
 }
 
 struct KeyData {
@@ -73,69 +61,7 @@ fn gen_keys(fill: usize) -> KeyData {
     KeyData { keys, miss_keys, order }
 }
 
-/// Validate that a flat hash variant is correct
-fn validate_flat(probing: Probing, prefetch: bool) -> bool {
-    let hasher: AHashBuilder = Default::default();
-    let mut map = FlatHash::new(1024, hasher, probing, prefetch);
-
-    // Insert 500 keys
-    let kd = gen_keys(500);
-    for i in 0..500 {
-        map.insert(&kd.keys[i], i as u64);
-    }
-
-    // Verify all present
-    for i in 0..500 {
-        if map.get(&kd.keys[i]) != Some(i as u64) {
-            eprintln!("FAIL: key {} not found or wrong value", i);
-            return false;
-        }
-    }
-
-    // Verify misses
-    for i in 0..500 {
-        if map.get(&kd.miss_keys[i]).is_some() {
-            eprintln!("FAIL: miss key {} found", i);
-            return false;
-        }
-    }
-
-    // Delete 250, verify
-    for i in 0..250 {
-        if !map.remove(&kd.keys[i]) {
-            eprintln!("FAIL: delete key {} failed", i);
-            return false;
-        }
-    }
-    for i in 0..250 {
-        if map.get(&kd.keys[i]).is_some() {
-            eprintln!("FAIL: deleted key {} still found", i);
-            return false;
-        }
-    }
-    for i in 250..500 {
-        if map.get(&kd.keys[i]) != Some(i as u64) {
-            eprintln!("FAIL: surviving key {} wrong", i);
-            return false;
-        }
-    }
-
-    if map.len() != 250 {
-        eprintln!("FAIL: wrong count {}", map.len());
-        return false;
-    }
-
-    true
-}
-
-struct BenchResult {
-    hit: u64,
-    miss: u64,
-    insert: u64,
-    delete: u64,
-}
-
-fn bench_hashbrown(n: usize, fill: usize, kd: &KeyData) -> BenchResult {
+fn bench(n: usize, fill: usize, pct: usize, kd: &KeyData) {
     let mut ins = [0u64; MEASURED];
     let mut lkp = [0u64; MEASURED];
     let mut mis = [0u64; MEASURED];
@@ -170,122 +96,30 @@ fn bench_hashbrown(n: usize, fill: usize, kd: &KeyData) -> BenchResult {
         }
     }
 
-    BenchResult {
-        hit: median(&mut lkp), miss: median(&mut mis),
-        insert: median(&mut ins), delete: median(&mut del),
-    }
-}
-
-fn bench_flat(n: usize, fill: usize, kd: &KeyData, probing: Probing, prefetch: bool) -> BenchResult {
-    let mut ins = [0u64; MEASURED];
-    let mut lkp = [0u64; MEASURED];
-    let mut mis = [0u64; MEASURED];
-    let mut del = [0u64; MEASURED];
-
-    for r in 0..TOTAL_RUNS {
-        let hasher: AHashBuilder = Default::default();
-        let mut map = FlatHash::new(n, hasher, probing, prefetch);
-
-        let start = Instant::now();
-        for i in 0..fill { map.insert(&kd.keys[i], i as u64); }
-        let insert_us = start.elapsed().as_micros() as u64;
-
-        let start = Instant::now();
-        for i in 0..fill { black_box(map.get(&kd.keys[kd.order[i]])); }
-        let hit_us = start.elapsed().as_micros() as u64;
-
-        let start = Instant::now();
-        for i in 0..fill { black_box(map.get(&kd.miss_keys[kd.order[i]])); }
-        let miss_us = start.elapsed().as_micros() as u64;
-
-        let start = Instant::now();
-        for i in 0..fill / 2 { black_box(map.remove(&kd.keys[i])); }
-        let delete_us = start.elapsed().as_micros() as u64;
-
-        if r >= WARMUP {
-            let idx = r - WARMUP;
-            ins[idx] = insert_us;
-            lkp[idx] = hit_us;
-            mis[idx] = miss_us;
-            del[idx] = delete_us;
-        }
-    }
-
-    BenchResult {
-        hit: median(&mut lkp), miss: median(&mut mis),
-        insert: median(&mut ins), delete: median(&mut del),
-    }
-}
-
-fn label(probing: Probing, prefetch: bool) -> &'static str {
-    match (probing, prefetch) {
-        (Probing::Linear, true) => "linear+prefetch",
-        (Probing::Linear, false) => "linear",
-        (Probing::Triangular, true) => "triangular+prefetch",
-        (Probing::Triangular, false) => "triangular",
-    }
-}
-
-fn print_result(name: &str, n: usize, load: usize, run: usize, r: &BenchResult) {
-    println!(
-        "{}\tn={}\tload={}\trun={}\thit={}\tmiss={}\tinsert={}\tdelete={}",
-        name, n, load, run, r.hit, r.miss, r.insert, r.delete
-    );
+    println!("n={}\tload={}\thit={}\tmiss={}\tinsert={}\tdelete={}",
+        n, pct, median(&mut lkp), median(&mut mis), median(&mut ins), median(&mut del));
 }
 
 fn main() {
-    // Validate all 4 flat variants first
-    eprintln!("Validating correctness...");
-    for probing in [Probing::Linear, Probing::Triangular] {
-        for prefetch in [true, false] {
-            if !validate_flat(probing, prefetch) {
-                eprintln!("VALIDATION FAILED: {:?} prefetch={}",
-                    match probing { Probing::Linear => "linear", Probing::Triangular => "triangular" },
-                    prefetch);
-                std::process::exit(1);
-            }
-        }
-    }
-    eprintln!("All variants validated.\n");
+    #[cfg(feature = "prefetch")]
+    eprintln!("=== hashbrown WITH prefetch patch ===\n");
+    #[cfg(not(feature = "prefetch"))]
+    eprintln!("=== hashbrown (stock from vendor) ===\n");
 
     let configs: Vec<(usize, usize)> = vec![
-        // (table_size, load_percent)
-        (65_536, 50),
-        (262_144, 50),
-        (1_048_576, 25),
-        (1_048_576, 50),
-        (1_048_576, 75),
-        (1_048_576, 90),
+        (65_536, 50), (262_144, 50),
+        (1_048_576, 10), (1_048_576, 25), (1_048_576, 50), (1_048_576, 75), (1_048_576, 90),
         (4_194_304, 50),
     ];
 
-    let variants: Vec<(Probing, bool)> = vec![
-        (Probing::Linear, true),
-        (Probing::Linear, false),
-        (Probing::Triangular, true),
-        (Probing::Triangular, false),
-    ];
-
-    println!("=== HASHBROWN IMPROVEMENT ISOLATION ===");
-    println!("=== 3 runs per config, cache flush between, ahash everywhere ===\n");
-
-    for (n, pct) in &configs {
-        let fill = n * pct / 100;
-        let kd = gen_keys(fill);
-
-        for run in 0..RUNS_PER_CONFIG {
-            // Flush cache before each run
+    for run in 0..3 {
+        eprintln!("--- Run {} ---", run);
+        for (n, pct) in &configs {
+            let fill = n * pct / 100;
+            let kd = gen_keys(fill);
             flush_cache();
-            let r = bench_hashbrown(*n, fill, &kd);
-            print_result("hashbrown", *n, *pct, run, &r);
-
-            for (probing, prefetch) in &variants {
-                flush_cache();
-                let r = bench_flat(*n, fill, &kd, *probing, *prefetch);
-                print_result(label(*probing, *prefetch), *n, *pct, run, &r);
-            }
-            println!();
+            bench(*n, fill, *pct, &kd);
         }
-        println!("---");
+        println!();
     }
 }
