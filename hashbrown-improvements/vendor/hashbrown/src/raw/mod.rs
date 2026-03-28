@@ -1191,13 +1191,10 @@ impl<T, A: Allocator> RawTable<T, A> {
             #[cfg(target_arch = "x86_64")]
             {
                 // Prefetch ctrl bytes for the initial probe group.
-                // Eliminates the L1 miss on Group::load inside find_inner.
                 let ctrl_ptr = self.table.ctrl(probe_pos) as *const i8;
                 core::arch::x86_64::_mm_prefetch(ctrl_ptr, core::arch::x86_64::_MM_HINT_T0);
 
                 // Speculatively prefetch data at the initial probe position.
-                // At 50% load, the match is usually at or near this slot.
-                // The ctrl load + SSE compare in find_inner provide the latency gap.
                 if !T::IS_ZERO_SIZED {
                     let data_ptr = self.data_end().as_ptr().sub(probe_pos + 1) as *const i8;
                     core::arch::x86_64::_mm_prefetch(data_ptr, core::arch::x86_64::_MM_HINT_T0);
