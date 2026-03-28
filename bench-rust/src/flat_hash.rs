@@ -59,6 +59,7 @@ pub struct FlatHash<'a, H: BuildHasher> {
     bucket_shift: u32,
     num_buckets: usize,
     count: usize,
+    capacity: usize,
     hasher: H,
 }
 
@@ -85,7 +86,58 @@ impl<'a, H: BuildHasher> FlatHash<'a, H> {
             bucket_shift: (64 - num_buckets.trailing_zeros()).min(63),
             num_buckets,
             count: 0,
+            capacity,
             hasher,
+        }
+    }
+
+    /// Abseil-style growth check: resize when count > capacity * 7/8
+    #[inline]
+    fn needs_resize(&self) -> bool {
+        self.count * 8 > self.capacity * 7
+    }
+
+    fn resize(&mut self) {
+        let new_capacity = self.capacity * 2;
+        let new_num_buckets = new_capacity / BUCKET_SIZE;
+        let new_fingerprints = vec![[0u8; BUCKET_SIZE]; new_num_buckets];
+        let new_entries = vec![[Entry::default(); BUCKET_SIZE]; new_num_buckets];
+
+        let old_fps = std::mem::replace(&mut self.fingerprints, new_fingerprints);
+        let old_entries = std::mem::replace(&mut self.entries, new_entries);
+        let old_num_buckets = self.num_buckets;
+
+        self.num_buckets = new_num_buckets;
+        self.bucket_mask = new_num_buckets - 1;
+        self.bucket_shift = (64 - new_num_buckets.trailing_zeros()).min(63);
+        self.capacity = new_capacity;
+        self.count = 0;
+
+        for bi in 0..old_num_buckets {
+            for si in 0..BUCKET_SIZE {
+                let fp = old_fps[bi][si];
+                if fp != 0 && fp != TOMBSTONE {
+                    let entry = old_entries[bi][si];
+                    self.insert_no_resize(entry.key, entry.value);
+                }
+            }
+        }
+    }
+
+    fn insert_no_resize(&mut self, key: &'a [u8], value: u64) {
+        let h = self.hash_key(key);
+        let fp = Self::fingerprint(h);
+        let base = h >> self.bucket_shift;
+        for probe in 0..MAX_PROBES {
+            let bi = (base.wrapping_add(probe as u64) as usize) & self.bucket_mask;
+            let mask = unsafe { match_empty_or_tombstone(self.fingerprints[bi].as_ptr()) };
+            if mask != 0 {
+                let slot = mask.trailing_zeros() as usize;
+                self.fingerprints[bi][slot] = fp;
+                self.entries[bi][slot] = Entry { key, value };
+                self.count += 1;
+                return;
+            }
         }
     }
 
@@ -103,21 +155,10 @@ impl<'a, H: BuildHasher> FlatHash<'a, H> {
     }
 
     pub fn insert(&mut self, key: &'a [u8], value: u64) {
-        let h = self.hash_key(key);
-        let fp = Self::fingerprint(h);
-        let base = h >> self.bucket_shift;
-
-        for probe in 0..MAX_PROBES {
-            let bi = (base.wrapping_add(probe as u64) as usize) & self.bucket_mask;
-            let mask = unsafe { match_empty_or_tombstone(self.fingerprints[bi].as_ptr()) };
-            if mask != 0 {
-                let slot = mask.trailing_zeros() as usize;
-                self.fingerprints[bi][slot] = fp;
-                self.entries[bi][slot] = Entry { key, value };
-                self.count += 1;
-                return;
-            }
+        if self.needs_resize() {
+            self.resize();
         }
+        self.insert_no_resize(key, value);
     }
 
     #[inline]
