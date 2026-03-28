@@ -1214,12 +1214,13 @@ impl<T, A: Allocator> RawTable<T, A> {
 
     /// Gets a reference to an element in the table.
     /// Fully inlined hot path -- no closure, no Bucket indirection, no find_inner call.
+    /// Uses raw bitmask ops instead of BitMaskIter to minimize overhead.
     #[inline(always)]
     pub fn get(&self, hash: u64, mut eq: impl FnMut(&T) -> bool) -> Option<&T> {
         unsafe {
             let bucket_mask = self.table.bucket_mask;
             let ctrl_base = self.table.ctrl.as_ptr();
-            let data_base = self.data_end().as_ptr(); // points past T0
+            let data_base = self.data_end().as_ptr();
             let tag_hash = Tag::full(hash);
 
             let mut pos = h1(hash) & bucket_mask;
@@ -1237,8 +1238,11 @@ impl<T, A: Allocator> RawTable<T, A> {
 
             loop {
                 let group = Group::load(ctrl_base.add(pos).cast());
+                let mut bits = group.match_tag(tag_hash).0; // raw u16 bitmask
 
-                for bit in group.match_tag(tag_hash) {
+                while bits != 0 {
+                    let bit = bits.trailing_zeros() as usize;
+                    bits &= bits - 1; // clear lowest set bit
                     let index = (pos + bit) & bucket_mask;
                     let element = &*data_base.sub(index + 1);
                     if likely(eq(element)) {
