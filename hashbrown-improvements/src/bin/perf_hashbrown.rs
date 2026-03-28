@@ -36,8 +36,15 @@ fn main() {
     for i in 0..fill { black_box(map.get(&keys[order[i]] as &[u8])); }
 
     // MEASURED: 10 rounds of hit lookups only
+    // Prefetch the NEXT key's ctrl+data while processing the current key.
     for _ in 0..10 {
+        // Prefetch the first key
+        map.prefetch_get(&keys[order[0]] as &[u8]);
         for i in 0..fill {
+            // Prefetch the next lookup while we process this one
+            if i + 1 < fill {
+                map.prefetch_get(&keys[order[i + 1]] as &[u8]);
+            }
             black_box(map.get(&keys[order[i]] as &[u8]));
         }
     }

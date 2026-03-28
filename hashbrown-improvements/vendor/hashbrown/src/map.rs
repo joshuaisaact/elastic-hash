@@ -1312,6 +1312,20 @@ where
         }
     }
 
+    /// Prefetch the ctrl and data slots for a future lookup of `k`.
+    /// Call this for the NEXT key before calling `get` for the CURRENT key
+    /// to overlap memory latency with useful work.
+    #[inline]
+    pub fn prefetch_get<Q>(&self, k: &Q)
+    where
+        Q: Hash + ?Sized,
+    {
+        if !self.table.is_empty() {
+            let hash = make_hash::<Q, S>(&self.hash_builder, k);
+            self.table.prefetch(hash);
+        }
+    }
+
     /// Returns the key-value pair corresponding to the supplied key.
     ///
     /// The supplied key may be any borrowed form of the map's key type, but

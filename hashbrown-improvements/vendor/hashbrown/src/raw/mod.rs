@@ -1225,6 +1225,23 @@ impl<T, A: Allocator> RawTable<T, A> {
         }
     }
 
+    /// Prefetch ctrl and data for a future lookup at the given hash.
+    #[inline]
+    pub fn prefetch(&self, hash: u64) {
+        let probe_pos = h1(hash) & self.table.bucket_mask;
+        unsafe {
+            #[cfg(target_arch = "x86_64")]
+            {
+                let ctrl_ptr = self.table.ctrl(probe_pos) as *const i8;
+                core::arch::x86_64::_mm_prefetch(ctrl_ptr, core::arch::x86_64::_MM_HINT_T0);
+                if !T::IS_ZERO_SIZED {
+                    let data_ptr = self.data_end().as_ptr().sub(probe_pos + 1) as *const i8;
+                    core::arch::x86_64::_mm_prefetch(data_ptr, core::arch::x86_64::_MM_HINT_T0);
+                }
+            }
+        }
+    }
+
     /// Gets a mutable reference to an element in the table.
     #[inline]
     pub fn get_mut(&mut self, hash: u64, eq: impl FnMut(&T) -> bool) -> Option<&mut T> {
