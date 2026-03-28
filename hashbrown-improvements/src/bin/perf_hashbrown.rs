@@ -1,6 +1,6 @@
 /// Minimal hashbrown lookup benchmark for perf profiling.
 /// Does ONLY hit lookups in the measured section.
-use std::collections::HashMap;
+use hashbrown::HashMap;
 use std::hash::BuildHasherDefault;
 use std::hint::black_box;
 use ahash::AHasher;
